@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0e1116" />
+  <title>S3-KBD — Clavier BLE</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== Barre du haut ===================== -->
+  <header class="topbar">
+    <div class="brand"><span class="logo">📡</span><span class="bname">S3-KBD</span></div>
+    <div class="spacer"></div>
+    <button id="btnFull" class="btn ghost icon" title="Plein écran">⛶</button>
+    <button id="btnLog" class="btn ghost icon" title="Journal">☰</button>
+    <button id="btnConn" class="btn conn primary">Connecter</button>
+  </header>
+
+  <div id="unsupported" class="banner hidden">
+    ⚠️ Ce navigateur ne supporte pas <b>Web Bluetooth</b>. Utilisez <b>Chrome</b> ou <b>Edge</b>
+    (Android ou desktop) via <b>https</b> ou <b>localhost</b>. iOS, Firefox, Safari : exclus. Brave : désactivé par défaut.
+  </div>
+  <div id="rotateHint" class="rotate-hint hidden">📱↻ Tournez le téléphone en <b>paysage</b> pour le clavier plein écran</div>
+
+  <!-- ===================== Onglets ===================== -->
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="azerty"><span class="ti">⌨️</span><span class="tl">AZERTY</span></button>
+    <button class="tab" data-tab="num"><span class="ti">🔢</span><span class="tl">Num</span></button>
+    <button class="tab" data-tab="fn"><span class="ti">🎛️</span><span class="tl">Fn/Média</span></button>
+    <button class="tab" data-tab="mouse"><span class="ti">🖱️</span><span class="tl">Souris</span></button>
+    <button class="tab" data-tab="text"><span class="ti">✍️</span><span class="tl">Texte</span></button>
+    <button class="tab" data-tab="macro"><span class="ti">📋</span><span class="tl">Macro</span></button>
+    <button class="tab" data-tab="seq"><span class="ti">⏱️</span><span class="tl">Séq.</span></button>
+  </nav>
+
+  <!-- ===================== Contenu ===================== -->
+  <main class="content">
+
+    <section id="tab-azerty" class="tabpage kbpage active"><div id="kb-azerty" class="keyboard"></div></section>
+    <section id="tab-num" class="tabpage kbpage"><div id="kb-num" class="keyboard"></div></section>
+    <section id="tab-fn" class="tabpage scrollpage"><div id="fnpad"></div></section>
+
+    <!-- Souris : surface maximale -->
+    <section id="tab-mouse" class="tabpage mousepage">
+      <div id="trackpad" class="trackpad"><span>Zone tactile — glissez pour déplacer le curseur, appui bref = clic gauche</span></div>
+      <div class="mbtns">
+        <button class="btn mbtn" data-mb="left">Clic gauche</button>
+        <button class="btn mbtn arrow" data-mw="3" title="Molette haut">▲</button>
+        <button class="btn mbtn" data-mb="middle">Milieu</button>
+        <button class="btn mbtn arrow" data-mw="-3" title="Molette bas">▼</button>
+        <button class="btn mbtn" data-mb="right">Clic droit</button>
+        <button id="btnMouseSettings" class="btn mbtn gear" title="Paramètres">⚙️</button>
+      </div>
+    </section>
+
+    <!-- Saisie texte au clavier physique / OS -->
+    <section id="tab-text" class="tabpage scrollpage">
+      <textarea id="passText" rows="5" placeholder="Écris ici avec le clavier du téléphone…" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+      <div class="row textrow">
+        <button id="btnPassSend" class="btn primary">Envoyer</button>
+        <label class="live"><input type="checkbox" id="liveToggle" checked> Envoi en direct</label>
+        <button id="btnPassClear" class="btn ghost">Effacer</button>
+      </div>
+    </section>
+
+    <!-- Macro -->
+    <section id="tab-macro" class="tabpage scrollpage">
+      <textarea id="macroText" rows="5" placeholder="café à 5 € — l'été"></textarea>
+      <div class="row">
+        <span id="macroLen" class="hint">0 octet</span>
+        <div class="spacer"></div>
+        <button id="btnMacroSave" class="btn ghost">Mémoriser</button>
+        <button id="btnMacroSend" class="btn primary">Envoyer</button>
+      </div>
+      <div id="macroList" class="chips"></div>
+    </section>
+
+    <!-- Séquences -->
+    <section id="tab-seq" class="tabpage scrollpage">
+      <div id="stepList" class="steps"></div>
+      <div class="row wrap">
+        <button class="btn ghost" data-add="tap">+ Frappe</button>
+        <button class="btn ghost" data-add="wait">+ Attente</button>
+        <button class="btn ghost" data-add="rep">+ Répétition</button>
+        <div class="spacer"></div>
+        <button id="btnSeqPreset" class="btn ghost">Préréglage démo</button>
+        <button id="btnSeqStop" class="btn danger">Stop</button>
+        <button id="btnSeqRun" class="btn primary">Lancer</button>
+      </div>
+      <div class="predef">
+        <div class="hint">Séquences prédéfinies :</div>
+        <div id="seqrow" class="cluster"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Popup paramètres souris -->
+<div id="mouseSettings" class="popup hidden">
+  <div class="popup-inner">
+    <div class="popup-head">Paramètres souris <button id="btnMouseClose" class="btn ghost icon">✕</button></div>
+    <label class="sens">Sensibilité <input id="mouseSens" type="range" min="1" max="20" value="8"><span id="sensVal">8</span></label>
+    <div class="hint">Vitesse du curseur pour les déplacements sur le trackpad.</div>
+  </div>
+</div>
+
+<!-- Journal (tiroir) -->
+<div id="logDrawer" class="log-drawer hidden">
+  <div class="drawer-head">Journal <button id="btnLogClear" class="btn ghost icon">🗑️</button>
+    <button id="btnLogClose" class="btn ghost icon">✕</button></div>
+  <div id="log" class="log"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+Caractéristiques du produit :
+
+1.Processeur double cœur haute performance : processeur double cœur LX7 32 bits intégré, offrant une puissance informatique puissante et des performances à faible consommation.
+
+2.Prise en charge du double mode Wi-Fi et Bluetooth : prend en charge le Wi-Fi 2,4 GHz et BT 5 (BLE), compatible avec une variété de protocoles de communication sans fil.
+
+3.Transmission de données efficace : débit de données jusqu'à 150 Mbps, assurant une connexion rapide et stable.
+
+4.Interfaces multiples : avec deux interfaces Type-C, l'une peut être utilisée directement avec la marque COM, et l'autre USB peut utiliser OTG ou appuyer sur BOOT pour allumer pour afficher le port normalement et télécharger le programme.
+
+5.Faible consommation d'énergie et mode haute puissance : avec un coprocesseur faible consommation et un mode haute puissance jusqu'à 20 dBm, il peut s'adapter aux besoins de divers scénarios d'application.
+
+
+
+
+
+Présentation du produit :
+
+Ce produit est une carte de développement basée sur le module ESP32-S3-N16R8, avec plus de ports IO, WS2818RGB intégré, correspondant à IO48.Avec deux interfaces Type-C, l'une peut être utilisée directement avec la marque COM, et l'autre USB peut utiliser OTG ou appuyer sur BOOT pour allumer afin d'afficher le port normalement et de télécharger le programme.Le programme d'usine est que RVB s'allume automatiquement après la connexion au WiFi et s'éteint après la déconnexion.
+
+
+
+
+
+
+Paramètres du produit :
+
+Tension de fonctionnement : 3,3 ~ 5 V.
+
+Port IO : 36 IO
+
+Flash : N16R8 (16 M), N8R2 (8 M)
+
+PSRAM : N16R8 (8M), N8R2 (2M)
+
+2 interfaces I2C, 4 SPI
+
+Taille: 57mm * 28mm
+
+
+
+
+
+
+Liste des produits :
+
+Carte de développement 1X
+
+En-têtes de broches 2X (les en-têtes de broches non soudées/en-têtes de broches soudées sont facultatifs)
+
+
+
+
+
+
+Remarque :
+
+Faites attention à ne pas court-circuiter les broches, car cela pourrait brûler le module.
+
+Des paramètres détaillés du module peuvent être obtenus auprès du service client pour les spécifications du module.

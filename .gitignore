@@ -1,0 +1,35 @@
+# ===========================================================================
+#  .gitignore — projet S3-KBD (clavier HID piloté en BLE)
+# ===========================================================================
+
+# --- Secrets : certificat auto-signé + CLÉ PRIVÉE (régénérés par serve.bat) ---
+WEB/ssl/
+
+# --- Notes de session (mémoire de travail, non versionnées) ---
+.remember/
+
+# --- Dump de page web fourni (AliExpress) : noms de fichiers trop longs, inutile ---
+ressources/ESP32/S3 Supermini/html/
+
+# --- Artefacts de build Arduino / ESP-IDF ---
+build/
+*.bin
+*.elf
+*.map
+*.hex
+sdkconfig.old
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- OS / éditeurs ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# --- Divers ---
+*.log
+*.tmp
