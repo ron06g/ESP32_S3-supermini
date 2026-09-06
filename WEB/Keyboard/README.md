@@ -92,3 +92,40 @@ Ctrl+C = `{"t":"char","v":"c","m":1}`, macro, séquences).
 5. Macro → un `txt` conforme (garde-fou MTU) ✔
 6. Séquences prédéfinies + personnalisée conformes au socle ✔
 7. Ergonomie tactile (grandes cibles, pensé smartphone) ✔
+
+## PWA (application installable)
+
+La page est une **PWA** : installable sur l'écran d'accueil (Android) ou en
+raccourci d'application (Chrome/Edge desktop), et utilisable hors-ligne.
+
+Fichiers ajoutés (dans ce dossier) :
+
+- `manifest.webmanifest` — nom, icônes, `display: standalone`, couleurs.
+- `sw.js` — service worker, stratégie **réseau d'abord / cache en repli**
+  (toujours à jour en ligne, disponible hors-ligne).
+- `pwa.js` — enregistre le SW et gère le bouton **« Installer »** (barre du haut,
+  visible quand le navigateur propose l'installation).
+- `icons/` — jeu d'icônes (192, 512, maskable, apple-touch, favicon).
+- `.htaccess` — Apache : type MIME du manifest + anti-cache du SW (facultatif).
+
+### Aucune URL finale requise
+
+Tous les chemins sont **relatifs**. La portée du service worker se déduit de son
+emplacement, donc la PWA fonctionne **quel que soit le dossier d'hébergement**
+(racine du domaine *ou* `/un/sous/dossier/`), sans rien reconfigurer. Seule
+exigence : **HTTPS** (déjà en place). Inutile de figer le chemin dès maintenant.
+
+> Si le chemin change **après** une première installation, l'appli déjà installée
+> continue de tourner, mais une réinstallation au nouveau chemin est vue comme
+> une nouvelle appli (l'identité dérive de `start_url`).
+
+### Hors Apache (Nginx)
+
+Le `.htaccess` est ignoré par Nginx. Équivalent :
+
+```nginx
+location = /manifest.webmanifest { types { application/manifest+json webmanifest; } }
+location = /sw.js { add_header Cache-Control "no-cache, no-store, must-revalidate"; }
+```
+
+Le serveur intégré `serve.py` (racine `WEB/`) convient pour tester en HTTPS.

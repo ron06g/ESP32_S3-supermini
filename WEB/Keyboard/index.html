@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0e1116" />
   <title>S3-KBD — Clavier BLE</title>
+
+  <!-- PWA : manifest + icônes (chemins relatifs, aucune URL absolue) -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="application-name" content="S3-KBD" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="S3-KBD" />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -14,6 +25,7 @@
   <header class="topbar">
     <div class="brand"><span class="logo">📡</span><span class="bname">S3-KBD</span></div>
     <div class="spacer"></div>
+    <button id="btnInstall" class="btn primary hidden" title="Installer l'application">⬇ Installer</button>
     <button id="btnFull" class="btn ghost icon" title="Plein écran">⛶</button>
     <button id="btnLog" class="btn ghost icon" title="Journal">☰</button>
     <button id="btnConn" class="btn conn primary">Connecter</button>
@@ -117,5 +129,6 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="app.js"></script>
+<script src="pwa.js"></script>
 </body>
 </html>

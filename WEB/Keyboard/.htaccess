@@ -1,0 +1,20 @@
+# ===========================================================================
+#  S3-KBD (PWA) — réglages serveur Apache. FACULTATIF mais recommandé.
+#  À supprimer si l'hébergement n'est pas Apache (voir README pour Nginx).
+#  Chemins relatifs partout : rien ici ne dépend de l'URL finale.
+# ===========================================================================
+
+# --- Type MIME correct pour le manifest ---
+<IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest
+</IfModule>
+
+# --- Le service worker ne doit PAS être figé par le cache HTTP du navigateur,
+#     sinon les mises à jour de l'appli tardent à s'appliquer. ---
+<IfModule mod_headers.c>
+  <FilesMatch "sw\.js$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>
