@@ -10,8 +10,12 @@ média) et un serveur BLE recevant les commandes du site web.
 
 | Fichier | Rôle |
 |---|---|
-| `hid_firmware.ino` | Orchestration : USB HID, serveur BLE, parseur JSON, séquenceur |
+| `hid_firmware.ino` | Orchestration : USB HID, serveur BLE, **transport Wi-Fi**, parseur JSON, séquenceur |
 | `keymap_azerty.h` | **Table AZERTY** (caractère Unicode → touche HID + modificateurs) — pièce critique |
+| `status_led.h` | Indicateur LED RGB WS2812 (tâche dédiée) |
+| `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
+| `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
+| `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
 
 ## Choix d'implémentation
 
@@ -31,6 +35,9 @@ code de référence fourni. Les équivalents utilisés :
    (Gestionnaire de cartes → « esp32 » par Espressif).
 2. Bibliothèque **ArduinoJson** (v7) via *Croquis → Inclure une bibliothèque →
    Gérer les bibliothèques → « ArduinoJson »*.
+3. Bibliothèque **WebSockets** de *Markus Sattler* (dépôt Links2004) — Gestionnaire
+   de bibliothèques → « WebSockets ». (`WiFi` / `WebServer` / `DNSServer` sont
+   fournis par le cœur esp32, rien à installer.)
 
 ## Réglages carte (menu *Outils*)
 
@@ -40,8 +47,9 @@ code de référence fourni. Les équivalents utilisés :
 | **USB Mode** | **USB-OTG (TinyUSB)** ← indispensable pour le HID |
 | USB CDC On Boot | **Enabled** (logs `Serial` sur l'USB natif) |
 | Upload Mode | UART0 / Hardware CDC |
-| Flash Size | selon la carte (SuperMini N8R2 = 8 MB) |
-| PSRAM | selon la carte (N8R2 → *QSPI PSRAM*) |
+| Flash Size | **4 MB** — carte en main = SuperMini **N4R2** ; `FlashSize=4M`. ⚠️ `8M` fait **boucler le boot** (`spi_flash: Detected size(4096k) smaller than … header(8192k)`) |
+| Partition Scheme | **Huge APP (3 MB No OTA / 1 MB SPIFFS)** — requis pour loger BLE + Wi-Fi + USB + app (tient dans 4 Mo) |
+| PSRAM | **QSPI PSRAM** (N4R2, `PSRAM=enabled`) — utile pour la RAM avec le Wi-Fi |
 
 > **SuperMini mono-USB** : le port sert de HID vers la cible ; le flash et les
 > logs passent par le **même** port (CDC/JTAG) ou par le **mode BOOT** (maintenir
@@ -57,9 +65,15 @@ code de référence fourni. Les équivalents utilisés :
 ```bash
 # FQBN : USBMode=default = « USB-OTG (TinyUSB) » (INDISPENSABLE au HID).
 # Attention : la valeur par défaut de la carte est hwcdc, qui n'a PAS de HID.
-arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc S3/hid_firmware
-arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc -p COM7 S3/hid_firmware
+# Depuis l'ajout du Wi-Fi : FlashSize=4M + PartitionScheme=huge_app (l'app par
+# défaut ~1,3 Mo ne suffit plus) + PSRAM=enabled (déporte les allocs WiFi/LWIP).
+arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
+arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
+
+> **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` (régénère `web_assets.h`
+> puis compile) et `S3\hid_firmware_flash.bat [COMx]` (compile + téléverse, port
+> auto-détecté). Ils localisent l'arduino-cli de l'IDE et ciblent `FlashSize=4M`.
 
 > **Après l'upload : appuyer sur RESET.** Sur ces cartes, le « hard reset via RTS »
 > qui suit l'upload ne relance pas toujours l'application ; la carte reste alors en
@@ -70,6 +84,29 @@ arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc -p 
 Au démarrage, le moniteur série (nouveau COM, 115200) affiche l'annonce BLE
 `S3-KBD` et l'état. Le PID énuméré est `1001` (dérivé par le cœur selon les
 interfaces) : sans importance pour le mock.
+
+## Transport Wi-Fi (résolution A) — évolution
+
+Second transport, à côté du BLE, compatible **iPhone** (cf.
+`ressources/cahier-des-charges_4.md`). Le S3 ouvre un **SoftAP** `S3-KBD` (WPA2,
+clé ≥ 8 car., IP fixe `192.168.4.1`, sans internet), répond aux sondes de
+**portail captif** et **sert lui-même l'app web** ; les commandes passent par un
+**WebSocket** (`ws://192.168.4.1:81/`) rejouant le **même protocole JSON** qu'en
+BLE. Le cœur (table AZERTY, séquenceur, USB HID) est inchangé : les deux
+transports enfilent dans la même file, un seul thread touche l'USB.
+
+**Avant chaque compilation, (re)générer l'app embarquée** depuis `WEB/Keyboard/` :
+
+```bash
+python S3/hid_firmware/tools/gen_web_assets.py   # écrit web_assets.h (gzip + routage)
+```
+
+Test depuis un téléphone : rejoindre le réseau **`S3-KBD`** (clé `apikey00` par
+défaut — **mock, à changer**), accepter le portail captif ; la télécommande
+s'ouvre en Wi-Fi sur `http://192.168.4.1/Keyboard/`. Le BLE reste utilisable, sans
+redémarrage. Contrainte de plateforme : une page **HTTPS** ne pourrait pas piloter
+`ws://192.168.4.1` (contenu mixte) — d'où l'app servie **en HTTP par le S3**
+(résolution A), seule option compatible iOS et hors-ligne.
 
 ## Tester le lot seul (sans le site web)
 

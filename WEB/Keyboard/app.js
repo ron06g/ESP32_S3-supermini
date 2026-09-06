@@ -10,6 +10,8 @@ const MOD = { ctrl:1, shift:2, alt:4, gui:8, altgr:16 };
 
 let device=null, gatt=null, cmdChar=null, statusChar=null;
 let deviceName='', lastStatus='';
+let activeTransport = null;         // façade : transport actif (BLE ou Wi-Fi)
+let WIFI_WS_PORT = 81;              // port WebSocket du S3 (résolution A)
 const mods = { ctrl:0, shift:0, alt:0, gui:0, altgr:0 };   // 0 off, 1 one-shot, 2 verrou
 const $ = (s) => document.querySelector(s);
 
@@ -19,12 +21,9 @@ const $ = (s) => document.querySelector(s);
 async function send(obj, reliable=false) {
   const json = JSON.stringify(obj);
   logLine('out', json);
-  if (!cmdChar) { toast('Non connecté'); return; }
-  const data = new TextEncoder().encode(json);
-  try {
-    if (!reliable && cmdChar.writeValueWithoutResponse) await cmdChar.writeValueWithoutResponse(data);
-    else await cmdChar.writeValue(data);
-  } catch (e) { logLine('err', 'écriture: ' + e.message); }
+  if (!activeTransport || !activeTransport.connected) { toast('Non connecté'); return; }
+  try { await activeTransport.send(json, reliable); }
+  catch (e) { logLine('err', 'écriture: ' + e.message); }
 }
 
 // ===========================================================================
@@ -40,9 +39,12 @@ function renderConn() {
   $('#btnConn').innerHTML = `<span class="cdot"></span>${esc(deviceName || 'connecté')}` +
     (lastStatus ? ` · ${esc(lastStatus)}` : '');
 }
-function onConnClick() { if (gatt && gatt.connected) disconnect(); else connect(); }
+function onConnClick() {
+  const t = activeTransport;
+  if (t && t.connected) t.disconnect(); else if (t) t.connect();
+}
 
-async function connect() {
+async function bleConnect() {
   logLine('out', 'clic « Connecter »');
   if (!navigator.bluetooth) {
     logLine('err', 'navigator.bluetooth ABSENT — Chrome/Edge via https/localhost requis.');
@@ -78,15 +80,58 @@ async function connect() {
     else logLine('err', 'connexion: ' + e.name + ' — ' + e.message);
   }
 }
-function disconnect() { if (gatt && gatt.connected) gatt.disconnect(); onDisconnected(); }
+function bleDisconnect() { if (gatt && gatt.connected) gatt.disconnect(); onDisconnected(); }
 function onDisconnected() {
   cmdChar = statusChar = gatt = null; lastStatus = '';
   setConn('off'); logLine('err', 'déconnecté');
 }
-function onStatus(e) {
-  lastStatus = new TextDecoder().decode(e.target.value);
-  if (gatt && gatt.connected) renderConn();
-  logLine('in', 'STATUS ' + lastStatus);
+// Statut unifié : appelé par le BLE (après décodage DataView) et par le Wi-Fi (frame texte).
+function handleStatus(text) {
+  lastStatus = text;
+  if (activeTransport && activeTransport.connected) renderConn();
+  logLine('in', 'STATUS ' + text);
+}
+function onStatus(e) { handleStatus(new TextDecoder().decode(e.target.value)); }
+
+// ===========================================================================
+//  Façade de transport : BLE (existant) + Wi-Fi (WebSocket, résolution A)
+//  Interface commune : connect(), disconnect(), get connected, send(json, reliable).
+//  L'IHM et l'encodage des commandes ne dépendent que de send() → aucun changement.
+// ===========================================================================
+const bleTransport = {
+  kind: 'ble',
+  connect: bleConnect,
+  disconnect: bleDisconnect,
+  get connected() { return !!(gatt && gatt.connected); },
+  async send(json, reliable) {
+    if (!cmdChar) throw new Error('CMD indisponible');
+    const data = new TextEncoder().encode(json);
+    if (!reliable && cmdChar.writeValueWithoutResponse) await cmdChar.writeValueWithoutResponse(data);
+    else await cmdChar.writeValue(data);
+  },
+};
+const wifiTransport = {
+  kind: 'wifi', ws: null, ip: null,
+  connect() { wifiConnect(this.ip); },
+  disconnect() { if (this.ws) { try { this.ws.close(); } catch (e) {} } },
+  get connected() { return !!(this.ws && this.ws.readyState === WebSocket.OPEN); },
+  send(json /*, reliable */) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('WebSocket non ouvert');
+    this.ws.send(json);   // TCP : fiable et ordonné, le drapeau « reliable » est sans objet
+  },
+};
+function wifiConnect(ip) {
+  const url = 'ws://' + ip + ':' + WIFI_WS_PORT + '/';
+  logLine('out', 'connexion Wi-Fi ' + url);
+  setConn('wait');
+  let ws;
+  try { ws = new WebSocket(url); }
+  catch (e) { setConn('off'); logLine('err', 'WebSocket: ' + e.message); return; }
+  wifiTransport.ws = ws;
+  ws.onopen    = () => { deviceName = 'S3-KBD (Wi-Fi)'; lastStatus = ''; setConn('on'); logLine('in', 'connecté (Wi-Fi) à ' + ip); };
+  ws.onmessage = (e) => { if (typeof e.data === 'string') handleStatus(e.data); };
+  ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
+  ws.onerror   = () => logLine('err', 'erreur WebSocket');
 }
 
 // ===========================================================================
@@ -497,6 +542,43 @@ function wireUI() {
 }
 
 // ===========================================================================
+//  Sélection du transport au chargement (param D → Wi-Fi, sinon BLE)
+// ===========================================================================
+function b64urlDecode(s) {
+  s = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const bin = atob(s);
+  const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+function readParamD() {
+  try {
+    const raw = new URLSearchParams(location.search).get('D');
+    if (!raw) return null;
+    const obj = JSON.parse(b64urlDecode(raw));
+    logLine('in', 'param D décodé : ' + JSON.stringify(obj));
+    return obj;
+  } catch (e) { logLine('err', 'param D illisible : ' + e.message); return null; }
+}
+function selectTransport() {
+  const D = readParamD();
+  if (D && D.wifi) {                                  // résolution A : app servie en HTTP par le S3
+    activeTransport = wifiTransport;
+    wifiTransport.ip = D.wifi;
+    if (D.wsport) WIFI_WS_PORT = +D.wsport;
+    $('#unsupported').classList.add('hidden');        // Web Bluetooth absent en HTTP : sans objet ici
+    logLine('in', 'Transport = Wi-Fi → ws://' + D.wifi + ':' + WIFI_WS_PORT + '/');
+    wifiConnect(D.wifi);                              // WebSocket : pas de geste utilisateur requis
+    return;
+  }
+  activeTransport = bleTransport;                     // mode BLE (existant)
+  logLine('in', 'Transport = BLE. Web Bluetooth: ' + (navigator.bluetooth ? 'présent' : 'ABSENT — Chrome/Edge + https/localhost requis'));
+  if (!navigator.bluetooth) $('#unsupported').classList.remove('hidden');
+  else if (navigator.bluetooth.getAvailability)
+    navigator.bluetooth.getAvailability().then((a) => logLine('in', 'Adaptateur Bluetooth actif: ' + (a ? 'oui' : 'NON — activez le Bluetooth Windows')));
+}
+
+// ===========================================================================
 //  Démarrage
 // ===========================================================================
 function init() {
@@ -515,12 +597,9 @@ function init() {
   wireUI();
   updateEnv();
 
-  logLine('in', '=== app.js v4 (onglets remaniés) chargé ===');
+  logLine('in', '=== app.js v5 (transport BLE + Wi-Fi) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
-  logLine('in', 'Web Bluetooth: ' + (navigator.bluetooth ? 'présent' : 'ABSENT — Chrome/Edge + https/localhost requis'));
-  if (!navigator.bluetooth) $('#unsupported').classList.remove('hidden');
-  else if (navigator.bluetooth.getAvailability)
-    navigator.bluetooth.getAvailability().then((a) => logLine('in', 'Adaptateur Bluetooth actif: ' + (a ? 'oui' : 'NON — activez le Bluetooth Windows')));
-  logLine('in', 'prêt. Cliquez « Connecter ».');
+  selectTransport();
+  logLine('in', 'prêt.');
 }
 document.addEventListener('DOMContentLoaded', init);

@@ -22,7 +22,8 @@
   </div>
   <script>
     // Redirection immédiate vers le projet par défaut.
-    location.replace('./Keyboard/');
+    // On propage la query string (?D=…) pour ne pas perdre le paramètre du transport Wi-Fi.
+    location.replace('./Keyboard/' + location.search);
   </script>
 </body>
 </html>

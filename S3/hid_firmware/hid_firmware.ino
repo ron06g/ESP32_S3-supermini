@@ -38,6 +38,14 @@
 #include "keymap_azerty.h"
 #include "status_led.h"
 
+#include "esp_heap_caps.h"              // mesures de heap (interne / PSRAM)
+
+// --- Transport Wi-Fi (résolution A) : déclarations avancées, puis includes ---
+static void enqueueCommand(const uint8_t* data, size_t len);   // défini plus bas (près du worker)
+static void releaseAll();                                      // défini plus bas
+#include "web_assets.h"                // app WEB/Keyboard/ embarquée (généré)
+#include "wifi_portal.h"               // SoftAP + portail captif + WebSocket
+
 // ---------------------------------------------------------------------------
 //  Contrat d'interface — UUIDs du service HID-Bridge (socle §5.1)
 // ---------------------------------------------------------------------------
@@ -77,6 +85,7 @@ BLEServer*         g_server     = nullptr;
 volatile bool g_connected = false;
 volatile bool g_stop      = false;   // demande d'arret de sequence
 QueueHandle_t g_cmdQueue  = nullptr; // file de char* (JSON \0-termine, malloc)
+SemaphoreHandle_t g_stopMux = nullptr; // serialise le fast-path STOP entre BLE et Wi-Fi
 
 uint8_t g_heldMods    = 0;           // modificateurs maintenus (Ctrl/Shift/...)
 uint8_t g_heldKeys[6] = {0};         // touches non-modif maintenues (down/up)
@@ -136,8 +145,9 @@ static void notifyStatus(const char* s) {
 
   if (g_statusChar) {
     g_statusChar->setValue((uint8_t*)s, strlen(s));
-    if (g_connected) g_statusChar->notify();
+    if (g_connected) g_statusChar->notify();   // garde g_connected : specifique BLE
   }
+  wifiQueueStatus(s);                          // diffusion Wi-Fi (drainee par la tache reseau)
   Serial.printf("[STATUS] %s\n", s);
 }
 
@@ -443,6 +453,42 @@ static void processCommand(const char* json) {
 }
 
 // ===========================================================================
+//  Enfilage d'une commande brute — PARTAGE par le BLE et le Wi-Fi.
+//  Garde-fou taille + STOP prioritaire hors-file. Les transports ne font que
+//  l'appeler ; l'execution (USB HID) reste au seul worker.
+// ===========================================================================
+static void enqueueCommand(const uint8_t* data, size_t len) {
+  if (!data || !len) return;
+  if (len > CMD_MAX_BYTES) { notifyStatus("err:toolong"); return; }
+
+  // Detection d'un STOP prioritaire : l'appliquer tout de suite (S3 §5.3), sans
+  // le mettre en file derriere une sequence en cours. Serialise BLE vs Wi-Fi.
+  bool isStop = false;
+  for (size_t i = 0; i + 4 <= len; i++)
+    if (memcmp(data + i, "stop", 4) == 0) { isStop = true; break; }
+  if (isStop) {
+    if (g_stopMux) xSemaphoreTake(g_stopMux, portMAX_DELAY);
+    g_stop = true;
+    char* p;
+    while (xQueueReceive(g_cmdQueue, &p, 0) == pdTRUE) free(p);
+    releaseAll();
+    if (g_stopMux) xSemaphoreGive(g_stopMux);
+    notifyStatus("ready");
+    return;
+  }
+
+  // Copie \0-terminee, mise en file (xQueueSend est thread-safe).
+  char* buf = (char*)malloc(len + 1);
+  if (!buf) { notifyStatus("err:mem"); return; }
+  memcpy(buf, data, len);
+  buf[len] = 0;
+  if (xQueueSend(g_cmdQueue, &buf, 0) != pdTRUE) {
+    free(buf);
+    notifyStatus("err:busy");                  // file pleine
+  }
+}
+
+// ===========================================================================
 //  Tache worker : consomme la file, execute. Seul thread qui touche l'USB HID.
 // ===========================================================================
 static void workerTask(void* arg) {
@@ -474,43 +520,18 @@ class ServerCB : public BLEServerCallbacks {
     ledPulse(C_CYAN, 140);             // marque la deconnexion, retour au repos
     g_stop = true;
     // Vide la file (et libere les buffers) pour ne rien taper apres coup.
+    if (g_stopMux) xSemaphoreTake(g_stopMux, portMAX_DELAY);
     char* p;
     while (xQueueReceive(g_cmdQueue, &p, 0) == pdTRUE) free(p);
     releaseAll();                        // relachement de surete (socle §5.1)
+    if (g_stopMux) xSemaphoreGive(g_stopMux);
     BLEDevice::startAdvertising();       // re-annonce
   }
 };
 
 class CmdCB : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* c) override {
-    uint8_t* data = c->getData();
-    size_t   len  = c->getLength();
-    if (!data || !len) return;
-    if (len > CMD_MAX_BYTES) { notifyStatus("err:toolong"); return; }
-
-    // Detection d'un STOP prioritaire : ne pas le mettre en file derriere une
-    // sequence en cours ; l'appliquer tout de suite (interruptibilite, S3 §5.3).
-    bool isStop = false;
-    for (size_t i = 0; i + 4 <= len; i++)
-      if (memcmp(data + i, "stop", 4) == 0) { isStop = true; break; }
-    if (isStop) {
-      g_stop = true;
-      char* p;
-      while (xQueueReceive(g_cmdQueue, &p, 0) == pdTRUE) free(p);
-      releaseAll();
-      notifyStatus("ready");
-      return;
-    }
-
-    // Copie \0-terminee, mise en file.
-    char* buf = (char*)malloc(len + 1);
-    if (!buf) { notifyStatus("err:mem"); return; }
-    memcpy(buf, data, len);
-    buf[len] = 0;
-    if (xQueueSend(g_cmdQueue, &buf, 0) != pdTRUE) {
-      free(buf);
-      notifyStatus("err:busy");          // file pleine
-    }
+    enqueueCommand(c->getData(), c->getLength());   // meme point d'entree que le Wi-Fi
   }
 };
 
@@ -527,6 +548,7 @@ void setup() {
 
   // --- File + tache worker (avant l'USB, pour ne rien perdre) ---
   g_cmdQueue = xQueueCreate(CMD_QUEUE_LEN, sizeof(char*));
+  g_stopMux  = xSemaphoreCreateMutex();          // avant l'USB/BLE (les callbacks l'utilisent)
   xTaskCreatePinnedToCore(workerTask, "worker", 8192, nullptr, 5, nullptr, 1);
 
   // --- USB HID (clavier + consumer) ---
@@ -577,7 +599,15 @@ void setup() {
     ledSetMode(LST_IDLE);
   }
 
-  Serial.println("[S3-KBD] pret. En attente d'un client BLE...");
+  // --- Transport Wi-Fi (SoftAP + portail captif + WebSocket), APRES le BLE ---
+  wifiPortalBegin();
+
+  Serial.printf("[HEAP] free=%u internal=%u psram=%u\n",
+                ESP.getFreeHeap(),
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+  Serial.println("[S3-KBD] pret. Clients BLE et/ou Wi-Fi acceptes.");
 }
 
 void loop() {
