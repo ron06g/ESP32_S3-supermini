@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>S3-KBD — Notice technique</title>
+<style>
+  :root{
+    --bg:#0b0e13; --bg2:#0e1116; --elev:#161b22; --key:#21262d; --key2:#2d333b;
+    --border:#30363d; --text:#e6edf3; --dim:#8b949e; --faint:#6e7681;
+    --accent:#2f81f7; --accent2:#1f6feb; --green:#3fb950; --amber:#d29922;
+    --red:#f85149; --violet:#a371f7; --teal:#39c5cf; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(47,129,247,.10), transparent 60%),
+      radial-gradient(900px 500px at 0% 10%, rgba(163,113,247,.08), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px; margin:0 auto; padding:0 24px 80px}
+  a{color:var(--accent)}
+
+  /* ---------- Hero ---------- */
+  header.hero{padding:56px 0 28px; border-bottom:1px solid var(--border); position:relative}
+  .badge-mock{display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600;
+    color:#ffd7a8; background:rgba(210,153,34,.12); border:1px solid rgba(210,153,34,.4);
+    padding:5px 11px; border-radius:999px; letter-spacing:.3px}
+  h1{font-size:clamp(32px,5vw,52px); margin:16px 0 6px; letter-spacing:-1px; font-weight:800;
+    background:linear-gradient(120deg,#fff 20%,#8fb8ff 60%,#c7a6ff); -webkit-background-clip:text;
+    background-clip:text; color:transparent}
+  .sub{font-size:clamp(16px,2vw,20px); color:var(--dim); max-width:720px}
+  .sub b{color:var(--text); font-weight:600}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px}
+  .chip{font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px;
+    background:var(--key); border:1px solid var(--border); color:var(--text)}
+  .chip .d{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:-1px}
+
+  h2{font-size:13px; text-transform:uppercase; letter-spacing:1.4px; color:var(--faint);
+    margin:52px 0 4px; font-weight:700}
+  .lead{font-size:22px; font-weight:700; margin:2px 0 18px; letter-spacing:-.3px}
+
+  /* ---------- Segmented control ---------- */
+  .seg{display:inline-flex; background:var(--elev); border:1px solid var(--border);
+    border-radius:999px; padding:5px; gap:4px; margin:8px 0 6px}
+  .seg button{appearance:none; border:0; background:transparent; color:var(--dim);
+    font:inherit; font-weight:700; font-size:14.5px; padding:9px 20px; border-radius:999px;
+    cursor:pointer; transition:.18s; display:flex; align-items:center; gap:9px}
+  .seg button .ic{font-size:16px}
+  .seg button:hover{color:var(--text)}
+  .seg button.on{background:linear-gradient(180deg,var(--accent),var(--accent2)); color:#fff;
+    box-shadow:0 6px 18px rgba(31,111,235,.35)}
+
+  /* ---------- Stage / diagram ---------- */
+  .stage{background:linear-gradient(180deg,rgba(22,27,34,.7),rgba(14,17,22,.7));
+    border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px 4px;
+    position:relative; overflow:hidden; box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+  .stage::before{content:""; position:absolute; inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+    background-size:26px 26px; mask:radial-gradient(120% 90% at 50% 20%,#000 40%,transparent 85%);
+    pointer-events:none}
+  .view{display:none}
+  .view.on{display:block; animation:fade .35s ease}
+  @keyframes fade{from{opacity:0; transform:translateY(6px)}to{opacity:1;transform:none}}
+  svg{display:block; width:100%; height:auto; position:relative}
+
+  /* node styling inside svg via classes */
+  .node rect{fill:var(--key); stroke:var(--border); stroke-width:1.5; transition:.2s}
+  .node:hover rect{stroke:var(--accent); fill:var(--key2)}
+  .node.hit rect{stroke:var(--green); fill:#123021}
+  .node .tt{font:700 15px system-ui; fill:var(--text)}
+  .node .st{font:500 11.5px system-ui; fill:var(--dim)}
+  .node .em{font-size:26px}
+  .conn{stroke-width:2.6; fill:none}
+  .conn.flow{filter:drop-shadow(0 0 6px currentColor)}
+  .lbl{font:700 12.5px system-ui}
+  .lbl.s{font:600 11px system-ui; fill:var(--dim)}
+  .hot{cursor:help}
+  .pin{font-size:11px; font-weight:700}
+
+  /* ---------- Legend ---------- */
+  .legend{display:flex; flex-wrap:wrap; gap:22px; margin:16px 2px 0; padding-top:14px;
+    border-top:1px dashed var(--border)}
+  .lg{display:flex; align-items:center; gap:11px; font-size:13.5px; color:var(--dim)}
+  .lg b{color:var(--text)}
+  .lg svg{width:66px; height:16px}
+
+  /* ---------- Example panel ---------- */
+  .exbar{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:14px}
+  .play{appearance:none; border:0; cursor:pointer; font:inherit; font-weight:700; font-size:15px;
+    color:#fff; background:linear-gradient(180deg,var(--green),#2ea043); padding:11px 22px;
+    border-radius:10px; box-shadow:0 6px 18px rgba(63,185,80,.3); display:flex; align-items:center; gap:9px}
+  .play:disabled{opacity:.5; cursor:default; box-shadow:none}
+  .play.replay{background:linear-gradient(180deg,var(--accent),var(--accent2)); box-shadow:0 6px 18px rgba(31,111,235,.3)}
+  .cap{flex:1; min-width:260px; font-size:14.5px; color:var(--text); background:var(--elev);
+    border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:8px;
+    padding:11px 14px; min-height:44px; display:flex; align-items:center; transition:.2s}
+  .cap code{background:var(--key); padding:2px 6px; border-radius:5px; font-size:13px; color:#a5d6ff}
+
+  /* ---------- Capability cards ---------- */
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:16px; margin-top:18px}
+  .card{background:var(--elev); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px 18px 8px; position:relative; overflow:hidden}
+  .card::after{content:""; position:absolute; left:0; top:0; height:100%; width:4px; background:var(--role,var(--accent))}
+  .card h3{margin:0 0 2px; font-size:17px; display:flex; align-items:center; gap:9px}
+  .card .role{font-size:12px; color:var(--dim); margin:0 0 12px}
+  .row{display:flex; align-items:center; gap:10px; padding:7px 0; border-top:1px solid rgba(255,255,255,.05); font-size:14px}
+  .row:first-of-type{border-top:0}
+  .row .k{color:var(--dim); flex:1}
+  .state{font-size:12px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .yes{color:#b7f0c6; background:rgba(63,185,80,.14); border:1px solid rgba(63,185,80,.4)}
+  .no{color:#ffb4ae; background:rgba(248,81,73,.12); border:1px solid rgba(248,81,73,.4)}
+  .opt{color:#ffe0a8; background:rgba(210,153,34,.13); border:1px solid rgba(210,153,34,.4)}
+  .out{color:#a5d6ff; background:rgba(47,129,247,.13); border:1px solid rgba(47,129,247,.4)}
+  .cardnote{font-size:12.5px; color:var(--faint); margin:10px 0 6px; line-height:1.5}
+
+  /* ---------- callout ---------- */
+  .callout{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-top:18px}
+  .co{background:linear-gradient(180deg,var(--elev),var(--bg2)); border:1px solid var(--border);
+    border-radius:var(--radius); padding:16px}
+  .co .t{font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--faint); font-weight:700}
+  .co .v{font-size:15px; margin-top:6px}
+  .co .v b{color:var(--text)}
+
+  /* ---------- tooltip ---------- */
+  #tip{position:fixed; z-index:99; max-width:300px; background:#05070a; color:var(--text);
+    border:1px solid var(--accent); border-radius:10px; padding:10px 13px; font-size:13px;
+    line-height:1.5; box-shadow:0 12px 40px rgba(0,0,0,.6); pointer-events:none; opacity:0;
+    transform:translateY(4px); transition:opacity .12s, transform .12s}
+  #tip.on{opacity:1; transform:none}
+  #tip .th{font-weight:700; margin-bottom:3px; color:#8fb8ff}
+  .seg.mini{padding:4px}
+  .seg.mini button{padding:7px 15px; font-size:13.5px}
+  .conn.dim{opacity:.15; transition:opacity .25s}
+  .conn.sel{stroke-width:3.4}
+  .node.hitg rect{fill:#241a3a; stroke:var(--violet)}
+  footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color:var(--faint); font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <span class="badge-mock">⚠️ Prototype / POC — sans sécurité (phase ultérieure)</span>
+    <h1>S3-KBD</h1>
+    <p class="sub">Un <b>pont d'injection HID</b> sur ESP32-S3 : il transforme une intention reçue
+      par <b>BLE</b>, <b>Wi-Fi</b> ou <b>port série</b> en <b>frappes clavier / souris USB</b> sur une machine
+      cible. Deux modules identiques peuvent s'<b>appairer en BLE</b> pour déporter la frappe à distance.</p>
+    <div class="chips">
+      <span class="chip"><span class="d" style="background:var(--green)"></span>USB HID clavier + souris</span>
+      <span class="chip"><span class="d" style="background:var(--accent)"></span>BLE (Web Bluetooth)</span>
+      <span class="chip"><span class="d" style="background:var(--teal)"></span>Wi-Fi (portail + WebSocket)</span>
+      <span class="chip"><span class="d" style="background:var(--amber)"></span>Port COM (série)</span>
+      <span class="chip"><span class="d" style="background:var(--violet)"></span>Appairage BLE ↔ BLE</span>
+    </div>
+  </header>
+
+  <!-- ===================== MODES ===================== -->
+  <h2>Configurations</h2>
+  <div class="lead">Choisissez un mode de fonctionnement</div>
+  <div class="seg" id="seg">
+    <button data-mode="auto" class="on"><span class="ic">📡</span> Mode autonome</button>
+    <button data-mode="con"><span class="ic">🔗</span> Mode connecté (maître + esclave)</button>
+  </div>
+
+  <div class="lead" style="font-size:15px; margin:22px 0 6px; color:var(--dim)">Type de flux à visualiser <span style="color:var(--faint); font-weight:500">· l'animation s'adapte au type choisi</span></div>
+  <div class="seg mini" id="segType">
+    <button data-type="kbd" class="on"><span class="ic">⌨️</span> Clavier</button>
+    <button data-type="mouse"><span class="ic">🖱️</span> Souris</button>
+    <button data-type="gpio"><span class="ic">🎛️</span> GPIO</button>
+    <button data-type="com"><span class="ic">🔌</span> COM</button>
+  </div>
+
+  <!-- ---------- STAGE ---------- -->
+  <div class="stage">
+
+    <!-- ===== VUE AUTONOME ===== -->
+    <div class="view on" id="view-auto">
+      <svg viewBox="0 0 980 300" role="img" aria-label="Schéma mode autonome">
+        <defs>
+          <marker id="ah-blue" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8z" fill="#2f81f7"/></marker>
+          <marker id="ah-blueS" markerWidth="11" markerHeight="11" refX="1" refY="4" orient="auto"><path d="M9 0L0 4L9 8z" fill="#2f81f7"/></marker>
+          <marker id="ah-green" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8z" fill="#3fb950"/></marker>
+        </defs>
+
+        <!-- connexions (les paths servent aussi de guide d'animation) -->
+        <path id="p_ab" class="conn hot" stroke="#2f81f7" marker-end="url(#ah-blue)" marker-start="url(#ah-blueS)"
+              d="M220 150 L400 150" data-tip-title="Protocole JSON — bidirectionnel"
+              data-tip="Aller : commandes du contrôleur (char, key, txt, seq, mouse, gpio, cfg, pair, ping).&#10;Retour : STATUS ready / busy / err / pong / gpio / cfg.&#10;Transport : BLE (Web Bluetooth), Wi-Fi (WebSocket) ou port COM — au choix."></path>
+        <path id="p_bc" class="conn hot" stroke="#3fb950" marker-end="url(#ah-green)"
+              d="M580 150 L760 150" data-tip-title="USB HID — sens unique"
+              data-tip="Le module ÉCRIT des frappes clavier / souris dans la machine cible.&#10;Jamais de lecture : l'information ne remonte pas par ce canal.&#10;La traduction AZERTY → code touche est faite dans le module."></path>
+
+        <!-- badges de canal -->
+        <text class="lbl" x="310" y="132" text-anchor="middle" fill="#79c0ff">BLE · Wi-Fi · COM</text>
+        <text class="lbl s" x="310" y="176" text-anchor="middle">commande ⇄ STATUS</text>
+        <text class="lbl" x="670" y="132" text-anchor="middle" fill="#7ee787">USB HID</text>
+        <text class="lbl s" x="670" y="176" text-anchor="middle">frappe → cible</text>
+
+        <!-- noeuds -->
+        <g class="node hot" data-tip-title="Contrôleur" data-tip="Votre téléphone ou PC dans un navigateur (Chrome/Edge), ou un terminal série. Il envoie l'intention, pas de code de scan.">
+          <rect x="40" y="102" width="180" height="96" rx="14"/>
+          <text class="em" x="130" y="150" text-anchor="middle">📱</text>
+          <text class="tt" x="130" y="176" text-anchor="middle">Contrôleur</text>
+          <text class="st" x="130" y="192" text-anchor="middle">téléphone / PC</text>
+        </g>
+        <g class="node hot" data-tip-title="Module S3-KBD (autonome)" data-tip="Reçoit les commandes, traduit en AZERTY, pilote l'USB HID et les GPIO. Sert aussi l'app web en Wi-Fi.">
+          <rect x="400" y="102" width="180" height="96" rx="14"/>
+          <text class="em" x="490" y="148" text-anchor="middle">📡</text>
+          <text class="tt" x="490" y="176" text-anchor="middle">Module S3-KBD</text>
+          <text class="st" x="490" y="192" text-anchor="middle">autonome</text>
+        </g>
+        <g class="node hot" id="tgt-auto" data-tip-title="Machine cible" data-tip="Le PC / la TV / la borne branchée en USB. Elle voit un vrai clavier et une vraie souris.">
+          <rect x="760" y="102" width="180" height="96" rx="14"/>
+          <text class="em" x="850" y="148" text-anchor="middle">🖥️</text>
+          <text class="tt" x="850" y="176" text-anchor="middle">Machine cible</text>
+          <text class="st" x="850" y="192" text-anchor="middle">PC / TV / borne</text>
+        </g>
+
+        <!-- GPIO badge -->
+        <g class="node hot" id="gpio-auto" data-tip-title="GPIO locaux" data-tip="Sorties 4-7 et entrées BOOT, 8-11. Pilotables par le contrôleur (commande gpio) ; les changements d'entrée remontent en STATUS. N'atteint jamais la machine cible.">
+          <rect x="415" y="222" width="150" height="34" rx="9" fill="#1b2230"/>
+          <text class="pin" x="490" y="244" text-anchor="middle" fill="#d2a8ff">🔌 GPIO locaux</text>
+        </g>
+        <line x1="490" y1="198" x2="490" y2="222" stroke="#8957e5" stroke-width="1.5" stroke-dasharray="3 3"/>
+
+        <!-- dots ambiants -->
+        <circle r="4.5" fill="#79c0ff"><animateMotion dur="2.3s" begin="0s"    repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#p_ab"/></animateMotion></circle>
+        <circle r="3.5" fill="#316dca"><animateMotion dur="2.6s" begin="-1.3s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear"><mpath href="#p_ab"/></animateMotion></circle>
+        <circle r="4.5" fill="#7ee787"><animateMotion dur="1.9s" begin="0s"    repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#p_bc"/></animateMotion></circle>
+        <circle r="4.5" fill="#7ee787"><animateMotion dur="1.9s" begin="-0.95s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#p_bc"/></animateMotion></circle>
+
+        <!-- packet d'exemple -->
+        <g id="pk-auto" opacity="0">
+          <rect x="-34" y="-14" width="68" height="28" rx="8" fill="#05070a" stroke="#3fb950" stroke-width="1.5"/>
+          <text id="pk-auto-t" x="0" y="5" text-anchor="middle" font="700 12px system-ui" fill="#fff" font-weight="700" font-size="12">a</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- ===== VUE CONNECTÉ ===== -->
+    <div class="view" id="view-con">
+      <svg viewBox="0 0 980 400" role="img" aria-label="Schéma mode connecté">
+        <defs>
+          <marker id="c-blue" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8z" fill="#2f81f7"/></marker>
+          <marker id="c-blueS" markerWidth="11" markerHeight="11" refX="1" refY="4" orient="auto"><path d="M9 0L0 4L9 8z" fill="#2f81f7"/></marker>
+          <marker id="c-vio" markerWidth="11" markerHeight="11" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8z" fill="#a371f7"/></marker>
+          <marker id="c-vioS" markerWidth="11" markerHeight="11" refX="1" refY="4" orient="auto"><path d="M9 0L0 4L9 8z" fill="#a371f7"/></marker>
+          <marker id="c-green" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto"><path d="M0 0L9 4L0 8z" fill="#3fb950"/></marker>
+        </defs>
+
+        <path id="c_am" class="conn hot" stroke="#2f81f7" marker-end="url(#c-blue)" marker-start="url(#c-blueS)"
+              d="M212 90 L378 90" data-tip-title="Contrôleur ⇄ Maître (BLE / Wi-Fi)"
+              data-tip="Le téléphone parle au maître comme à un module autonome : commandes à l'aller, STATUS au retour."></path>
+        <path id="c_ms" class="conn hot" stroke="#a371f7" marker-end="url(#c-vio)" marker-start="url(#c-vioS)"
+              d="M552 90 L718 90" data-tip-title="Lien BLE dédié maître ↔ esclave"
+              data-tip="Le maître est CLIENT BLE de l'esclave. Il écrit les commandes sur le CMD de l'esclave (transfert tel quel) ; l'esclave renvoie ses STATUS. C'est ce lien qu'on mesure : ping/pong (RTT) et RSSI."></path>
+        <path id="c_sc" class="conn hot" stroke="#3fb950" marker-end="url(#c-green)"
+              d="M805 132 L805 250" data-tip-title="USB HID — sens unique"
+              data-tip="Seul l'ESCLAVE tape : il injecte les frappes dans SA machine cible. Le maître, lui, ne tape pas localement."></path>
+
+        <text class="lbl" x="295" y="72" text-anchor="middle" fill="#79c0ff">BLE · Wi-Fi</text>
+        <text class="lbl s" x="295" y="112" text-anchor="middle">commande ⇄ STATUS</text>
+        <text class="lbl" x="635" y="72" text-anchor="middle" fill="#d2a8ff">lien BLE dédié</text>
+        <text class="lbl s" x="635" y="112" text-anchor="middle">transfert ⇄ STATUS · ping/RSSI</text>
+        <text class="lbl" x="828" y="188" fill="#7ee787">USB HID</text>
+        <text class="lbl s" x="828" y="205">frappe → cible</text>
+
+        <g class="node hot" data-tip-title="Contrôleur" data-tip="Téléphone ou PC. Il ne voit que le maître ; l'esclave lui est transparent.">
+          <rect x="42" y="45" width="170" height="90" rx="14"/>
+          <text class="em" x="127" y="90" text-anchor="middle">📱</text>
+          <text class="tt" x="127" y="116" text-anchor="middle">Contrôleur</text>
+        </g>
+        <g class="node hot" data-tip-title="Module MAÎTRE" data-tip="Garde le Wi-Fi et le BLE pour le téléphone. Il NE TAPE PAS : il transfère toutes les commandes (sauf cfg/pair) à l'esclave, et relaie ses STATUS. Lien coupé → err:nolink.">
+          <rect x="378" y="45" width="174" height="90" rx="14"/>
+          <text class="em" x="465" y="86" text-anchor="middle">📡</text>
+          <text class="tt" x="465" y="112" text-anchor="middle">Maître</text>
+        </g>
+        <g class="node hot" id="slv-con" data-tip-title="Module ESCLAVE" data-tip="Plus de Wi-Fi. BLE réservé au maître (liste blanche + vérif MAC). Exécute localement le HID, les GPIO et le port COM.">
+          <rect x="718" y="45" width="174" height="90" rx="14"/>
+          <text class="em" x="805" y="86" text-anchor="middle">📡</text>
+          <text class="tt" x="805" y="112" text-anchor="middle">Esclave</text>
+        </g>
+        <g class="node hot" id="tgt-con" data-tip-title="Machine cible" data-tip="Branchée en USB sur l'esclave : c'est ELLE qui reçoit les frappes déportées.">
+          <rect x="718" y="250" width="174" height="90" rx="14"/>
+          <text class="em" x="805" y="292" text-anchor="middle">🖥️</text>
+          <text class="tt" x="805" y="318" text-anchor="middle">Machine cible</text>
+        </g>
+
+        <!-- pastilles d'état -->
+        <g class="node hot" data-tip-title="Le maître ne frappe pas" data-tip="Ses interfaces HID existent mais servent au transfert : tout part vers l'esclave.">
+          <rect x="388" y="142" width="154" height="30" rx="9" fill="#1b2230"/>
+          <text class="pin" x="465" y="162" text-anchor="middle" fill="#ffd7a8">⇢ transfère tout</text>
+        </g>
+        <g class="node hot" data-tip-title="Esclave sans Wi-Fi" data-tip="Pour le libérer : commande RESET sur son port COM, ou 5 appuis sur le bouton BOOT.">
+          <rect x="728" y="142" width="154" height="30" rx="9" fill="#2a1b1b"/>
+          <text class="pin" x="805" y="162" text-anchor="middle" fill="#ffb4ae">✗ Wi-Fi coupé</text>
+        </g>
+
+        <!-- dots ambiants -->
+        <circle r="4.5" fill="#79c0ff"><animateMotion dur="2.2s" begin="0s"    repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#c_am"/></animateMotion></circle>
+        <circle r="3.5" fill="#316dca"><animateMotion dur="2.5s" begin="-1.2s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear"><mpath href="#c_am"/></animateMotion></circle>
+        <circle r="4.5" fill="#c297ff"><animateMotion dur="2.2s" begin="0s"    repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#c_ms"/></animateMotion></circle>
+        <circle r="3.5" fill="#7d54c9"><animateMotion dur="2.5s" begin="-1.2s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear"><mpath href="#c_ms"/></animateMotion></circle>
+        <circle r="4.5" fill="#7ee787"><animateMotion dur="1.8s" begin="0s"    repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#c_sc"/></animateMotion></circle>
+        <circle r="4.5" fill="#7ee787"><animateMotion dur="1.8s" begin="-0.9s" repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#c_sc"/></animateMotion></circle>
+
+        <g id="pk-con" opacity="0">
+          <rect x="-40" y="-14" width="80" height="28" rx="8" fill="#05070a" stroke="#3fb950" stroke-width="1.5"/>
+          <text id="pk-con-t" x="0" y="5" text-anchor="middle" fill="#fff" font-weight="700" font-size="12">a</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- ---------- Exemple rejouable ---------- -->
+    <div class="exbar">
+      <button class="play" id="play">▶ Suivre une frappe « a »</button>
+      <div class="cap" id="cap">Cliquez sur « Suivre une frappe » : le paquet part du contrôleur et l'on voit chaque étape jusqu'à la machine cible, puis le STATUS qui revient.</div>
+    </div>
+
+    <!-- ---------- Légende ---------- -->
+    <div class="legend">
+      <div class="lg"><svg viewBox="0 0 66 16"><line x1="4" y1="8" x2="54" y2="8" stroke="#3fb950" stroke-width="3"/><path d="M54 4l8 4l-8 4z" fill="#3fb950"/></svg><span><b>HID — sens unique.</b> Le module écrit dans la cible, ne lit jamais.</span></div>
+      <div class="lg"><svg viewBox="0 0 66 16"><path d="M12 8h42" stroke="#2f81f7" stroke-width="3"/><path d="M54 4l8 4l-8 4z" fill="#2f81f7"/><path d="M12 4l-8 4l8 4z" fill="#2f81f7"/></svg><span><b>Protocole — bidirectionnel.</b> BLE / Wi-Fi / COM : commande ⇄ STATUS.</span></div>
+      <div class="lg"><svg viewBox="0 0 66 16"><path d="M12 8h42" stroke="#a371f7" stroke-width="3"/><path d="M54 4l8 4l-8 4z" fill="#a371f7"/><path d="M12 4l-8 4l8 4z" fill="#a371f7"/></svg><span><b>Lien BLE dédié.</b> Maître ↔ esclave : transfert + STATUS + ping/RSSI.</span></div>
+    </div>
+  </div>
+
+  <!-- ---------- Où part / où arrive ---------- -->
+  <div class="callout" id="callout"></div>
+
+  <!-- ---------- Cartes de capacités ---------- -->
+  <h2>Détail des capacités</h2>
+  <div class="lead" id="cardtitle">Mode autonome</div>
+  <div class="grid" id="cards"></div>
+
+  <footer>
+    S3-KBD — notice technique. Prototype/POC sans sécurité (appairage chiffré et authentification reportés).
+    Le périphérique est un injecteur de frappes : ne le brancher que sur des machines de confiance.
+  </footer>
+</div>
+
+<div id="tip"><div class="th"></div><div class="tb"></div></div>
+
+<script>
+"use strict";
+const $ = (s,r=document)=>r.querySelector(s);
+
+/* ---------- Infobulles ---------- */
+const tip=$("#tip"), tipH=$("#tip .th"), tipB=$("#tip .tb");
+document.addEventListener("mouseover",e=>{
+  const el=e.target.closest("[data-tip]"); if(!el) return;
+  tipH.textContent = el.getAttribute("data-tip-title")||"";
+  tipB.innerHTML = (el.getAttribute("data-tip")||"").replace(/&#10;/g,"<br>").replace(/\n/g,"<br>");
+  tip.classList.add("on");
+});
+document.addEventListener("mousemove",e=>{
+  if(!tip.classList.contains("on")) return;
+  const p=14, w=tip.offsetWidth, h=tip.offsetHeight;
+  let x=e.clientX+p, y=e.clientY+p;
+  if(x+w>innerWidth-8) x=e.clientX-w-p;
+  if(y+h>innerHeight-8) y=e.clientY-h-p;
+  tip.style.left=x+"px"; tip.style.top=y+"px";
+});
+document.addEventListener("mouseout",e=>{
+  if(e.target.closest("[data-tip]") && !(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("[data-tip]")))
+    tip.classList.remove("on");
+});
+
+/* ---------- État : mode de config (auto/con) × type de flux ---------- */
+let mode="auto", type="kbd", runToken=0;
+const B="#2f81f7", G="#3fb950", V="#a371f7", T="#39c5cf";
+const TL={kbd:"Clavier", mouse:"Souris", gpio:"GPIO", com:"COM"};
+const L=(path,rev,label,color,cap,hit)=>({t:"move",path,rev:!!rev,label,color,cap,hit});
+const SP=(cap,hit,ms)=>({t:"spot",cap,hit,ms});
+
+// Scénarios : ordre des étapes (déplacements de paquet + arrêts commentés).
+const S={
+ auto:{
+  kbd:[
+   L("p_ab",0,'"a"',B,'1 · Le <b>contrôleur</b> envoie <code>{"t":"char","v":"a"}</code> (BLE / Wi-Fi / COM).'),
+   L("p_bc",0,"⌨ A",G,'2 · Le module traduit en AZERTY et l\'injecte en <b>USB HID</b> — <b>sens unique</b> vers la cible.',"target"),
+   L("p_ab",1,"ready",B,'3 · Voie retour : <code>STATUS ready</code> revient au contrôleur.')
+  ],
+  mouse:[
+   L("p_ab",0,"dx 40",B,'1 · Le contrôleur envoie <code>{"t":"mouse","dx":40}</code>.'),
+   L("p_bc",0,"🖱 →",G,'2 · Le module déplace le curseur en <b>USB HID</b> — <b>sens unique</b> vers la cible.',"target"),
+   L("p_ab",1,"ready",B,'3 · <code>STATUS</code> revient au contrôleur.')
+  ],
+  gpio:[
+   L("p_ab",0,"set 4",B,'1 · Le contrôleur envoie <code>{"t":"gpio","p":"4","a":"set"}</code>.'),
+   SP('2 · La <b>broche 4 du module</b> passe à 3,3 V. ⚠️ Ça s\'arrête au module : <b>ça n\'atteint pas la machine cible</b>.',"gpio",1200),
+   L("p_ab",1,"gpio:4:1",B,'3 · Le module confirme l\'état de la broche au contrôleur.'),
+   SP('4 · Un <b>bouton du module</b> (BOOT, 8-11) est pressé physiquement.',"gpio",1100),
+   L("p_ab",1,"gpio:BOOT:1",B,'5 · L\'entrée <b>remonte spontanément</b> vers le contrôleur — le GPIO est <b>bidirectionnel</b>.')
+  ],
+  com:[
+   L("p_ab",0,"ligne JSON",T,'1 · Un <b>terminal série (USB COM)</b> envoie une ligne JSON — même protocole que BLE/Wi-Fi.'),
+   L("p_bc",0,"⌨ A",G,'2 · …qui produit la même frappe <b>USB HID</b> sur la cible.',"target"),
+   L("p_ab",1,"ready ⏎",T,'3 · Le <code>STATUS</code> revient <b>en une ligne</b> sur le COM — <b>bidirectionnel</b>.')
+  ]
+ },
+ con:{
+  kbd:[
+   L("c_am",0,'"a"',B,'1 · <b>Contrôleur → Maître</b> (BLE / Wi-Fi).'),
+   L("c_ms",0,'⇢ "a"',V,'2 · Le <b>maître ne tape pas</b> : il transfère sur le <b>lien BLE dédié</b> → esclave.'),
+   L("c_sc",0,"⌨ A",G,'3 · L\'<b>esclave</b> injecte la frappe en <b>USB HID</b> sur SA cible.',"target"),
+   L("c_ms",1,"ready",V,'4 · <code>STATUS</code> remonte esclave → maître…'),
+   L("c_am",1,"ready",B,'5 · …puis maître → contrôleur.')
+  ],
+  mouse:[
+   L("c_am",0,"dx 40",B,'1 · <b>Contrôleur → Maître</b> : <code>{"t":"mouse","dx":40}</code>.'),
+   L("c_ms",0,"⇢ 🖱",V,'2 · Le maître transfère sur le <b>lien BLE dédié</b>.'),
+   L("c_sc",0,"🖱 →",G,'3 · L\'esclave déplace le curseur en <b>USB HID</b> sur SA cible.',"target"),
+   L("c_ms",1,"ready",V,'4 · <code>STATUS</code> remonte…'),
+   L("c_am",1,"ready",B,'5 · …jusqu\'au contrôleur.')
+  ],
+  gpio:[
+   L("c_am",0,"set 4",B,'1 · <b>Contrôleur → Maître</b> : <code>{"t":"gpio","p":"4","a":"set"}</code>.'),
+   L("c_ms",0,"⇢ gpio",V,'2 · Le maître transfère la commande à l\'esclave.'),
+   SP('3 · La <b>broche 4 de l\'esclave</b> passe à 3,3 V (jamais la machine cible).',"slave",1200),
+   L("c_ms",1,"gpio:4:1",V,'4 · L\'état de la broche remonte…'),
+   L("c_am",1,"gpio:4:1",B,'5 · …jusqu\'au contrôleur.')
+  ],
+  com:[
+   SP('Sur un <b>esclave</b>, le <b>port COM</b> est la voie de contrôle locale et sert au <b>RESET</b> (désappairage) : <code>{"t":"pair","a":"reset"}</code>.',"slave",1600),
+   L("c_ms",1,"pair:ok",V,'L\'esclave accuse <code>pair:ok</code> puis redevient autonome (il redémarre). 5 appuis sur BOOT font la même chose.')
+  ]
+ }
+};
+// Connexions de chaque vue + celles concernées par le type (les autres sont estompées).
+const CONNS={auto:["p_ab","p_bc"], con:["c_am","c_ms","c_sc"]};
+const ACTIVE={
+ auto:{kbd:["p_ab","p_bc"],mouse:["p_ab","p_bc"],com:["p_ab","p_bc"],gpio:["p_ab"]},
+ con:{kbd:["c_am","c_ms","c_sc"],mouse:["c_am","c_ms","c_sc"],gpio:["c_am","c_ms"],com:["c_ms"]}
+};
+
+/* ---------- Déplacement d'un paquet le long d'un path ---------- */
+function moveAlong(svgId, pkId, pathId, reverse, dur, tk){
+  return new Promise(res=>{
+    const path=$("#"+pathId), pk=$("#"+pkId);
+    const Ln=path.getTotalLength(), t0=performance.now();
+    pk.setAttribute("opacity","1");
+    (function fr(now){
+      if(tk!==runToken) return res();
+      let raw=Math.min(1,(now-t0)/dur);
+      let k=raw<.5?2*raw*raw:1-Math.pow(-2*raw+2,2)/2;
+      const t=reverse?1-k:k, p=path.getPointAtLength(Ln*t);
+      pk.setAttribute("transform",`translate(${p.x},${p.y})`);
+      if(raw<1) requestAnimationFrame(fr); else res();
+    })(t0);
+  });
+}
+function setPacket(pkId,tId,txt,color){ $("#"+tId).textContent=txt; const r=$("#"+pkId+" rect"); if(r) r.setAttribute("stroke",color); }
+function flash(id){ const a=$("#"+id); if(!a) return; a.classList.add("flow"); a.setAttribute("stroke-width","4.5");
+  setTimeout(()=>{a.classList.remove("flow"); a.setAttribute("stroke-width", a.classList.contains("sel")?"3.4":"2.6");},700); }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function glow(hit){
+  if(hit==="target"){ $("#"+(mode==="auto"?"tgt-auto":"tgt-con")).classList.add("hit"); }
+  else if(hit==="gpio"){ $("#gpio-auto").classList.add("hitg"); }
+  else if(hit==="slave"){ $("#slv-con").classList.add("hitg"); }
+}
+function resetGlows(){
+  ["tgt-auto","tgt-con"].forEach(id=>{const e=$("#"+id); if(e) e.classList.remove("hit");});
+  ["gpio-auto","slv-con"].forEach(id=>{const e=$("#"+id); if(e) e.classList.remove("hitg");});
+  ["pk-auto","pk-con"].forEach(id=>{const e=$("#"+id); if(e) e.setAttribute("opacity","0");});
+}
+
+/* ---------- Lecture d'un scénario ---------- */
+async function run(tk){
+  $("#play").disabled=true; resetGlows();
+  const legs=S[mode][type];
+  const svgId=mode==="auto"?"view-auto":"view-con";
+  const pkId=mode==="auto"?"pk-auto":"pk-con", tId=pkId+"-t";
+  for(const lg of legs){
+    if(tk!==runToken) return;
+    $("#cap").innerHTML=lg.cap;
+    if(lg.t==="spot"){ if(lg.hit) glow(lg.hit); await sleep(lg.ms||900); continue; }
+    setPacket(pkId,tId,lg.label,lg.color); flash(lg.path);
+    await moveAlong(svgId,pkId,lg.path,lg.rev,lg.dur||1000,tk);
+    if(lg.hit) glow(lg.hit);
+  }
+  if(tk!==runToken) return;
+  const p=$("#play"); p.disabled=false; p.classList.add("replay"); p.innerHTML="↻ Rejouer : "+TL[type];
+  setTimeout(()=>{ if(tk===runToken){ const e=$("#"+pkId); if(e) e.setAttribute("opacity","0"); } },1100);
+}
+function start(){ runToken++; const tk=runToken; run(tk); }
+
+/* ---------- Mise en page selon (mode, type) ---------- */
+function refresh(autoplay){
+  runToken++;                                   // annule toute animation en cours
+  [...$("#seg").children].forEach(b=>b.classList.toggle("on",b.dataset.mode===mode));
+  [...$("#segType").children].forEach(b=>b.classList.toggle("on",b.dataset.type===type));
+  $("#view-auto").classList.toggle("on",mode==="auto");
+  $("#view-con").classList.toggle("on",mode==="con");
+  CONNS[mode].forEach(id=>{
+    const el=$("#"+id); if(!el) return;
+    const on=ACTIVE[mode][type].includes(id);
+    el.classList.toggle("dim",!on); el.classList.toggle("sel",on);
+    el.setAttribute("stroke-width", on?"3.4":"2.6");
+  });
+  CONNS[mode==="auto"?"con":"auto"].forEach(id=>{const el=$("#"+id); if(el){el.classList.remove("dim");el.classList.remove("sel");el.setAttribute("stroke-width","2.6");}});
+  resetGlows();
+  const p=$("#play"); p.disabled=false; p.classList.remove("replay"); p.innerHTML="▶ Animer : "+TL[type];
+  $("#cap").textContent="Choisissez un type ou cliquez sur « Animer » : le paquet suit son trajet réel, étape par étape.";
+  renderCards(); renderCallout();
+  if(autoplay){ const tk=runToken; setTimeout(()=>{ if(tk===runToken) start(); },380); }
+}
+
+$("#seg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; mode=b.dataset.mode; refresh(true); });
+$("#segType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; type=b.dataset.type; refresh(true); });
+$("#play").addEventListener("click",start);
+
+/* ---------- Cartes de capacités ---------- */
+const F={yes:'<span class="state yes">✓ actif</span>', no:'<span class="state no">✗ non</span>',
+  opt:'<span class="state opt">◐ option</span>', out:'<span class="state out">→ sortie</span>',
+  io:'<span class="state out">⇄ E/S</span>', xfer:'<span class="state opt">⇢ transfert</span>'};
+const DATA={
+  auto:{title:"Mode autonome", cards:[
+    {h:"📡 Module autonome", role:"un seul module — pilotage direct", color:"var(--accent)",
+     fn:[["Clavier HID",F.yes],["Souris HID",F.yes],["Séquences / macros",F.yes],["Touches média",F.yes],["GPIO",F.io],["Port COM",F.opt]],
+     co:[["USB HID → cible",F.out],["BLE (Web Bluetooth)",F.yes],["Wi-Fi (SoftAP + WebSocket)",F.yes],["Port COM (série)",F.opt]],
+     note:"Le contrôleur choisit son transport (BLE, Wi-Fi ou COM). Le HID part toujours vers la machine cible ; le protocole reste bidirectionnel."}
+  ]},
+  con:{title:"Mode connecté", cards:[
+    {h:"📡 Maître", role:"reçoit du contrôleur, transfère à l'esclave", color:"var(--accent)",
+     fn:[["Clavier HID",F.xfer],["Souris HID",F.xfer],["GPIO",F.xfer],["cfg / appairage",F.yes],["Frappe locale",F.no]],
+     co:[["BLE (téléphone)",F.yes],["Wi-Fi (SoftAP)",F.yes],["Lien BLE → esclave",F.yes],["Port COM",F.opt],["USB HID local",F.no]],
+     note:"Tout sauf cfg/pair est transféré tel quel. Si le lien est coupé : err:nolink (rien n'est tapé)."},
+    {h:"📡 Esclave", role:"exécute les commandes du maître", color:"var(--violet)",
+     fn:[["Clavier HID",F.yes],["Souris HID",F.yes],["Séquences / macros",F.yes],["GPIO",F.io],["Port COM",F.opt]],
+     co:[["USB HID → cible",F.out],["BLE (maître uniquement)",F.yes],["Wi-Fi",F.no],["Port COM (+ RESET)",F.opt]],
+     note:"Plus de Wi-Fi ; BLE filtré sur la MAC du maître. Libération : RESET sur COM, ou 5 appuis sur BOUTON BOOT."}
+  ]}
+};
+function renderCards(){
+  const d=DATA[mode]; $("#cardtitle").textContent=d.title;
+  $("#cards").innerHTML=d.cards.map(c=>`
+    <div class="card" style="--role:${c.color}">
+      <h3>${c.h}</h3><p class="role">${c.role}</p>
+      <div class="cardnote" style="margin-top:0;color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:11px">Fonctions</div>
+      ${c.fn.map(r=>`<div class="row"><span class="k">${r[0]}</span>${r[1]}</div>`).join("")}
+      <div class="cardnote" style="color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:11px">Connectivité</div>
+      ${c.co.map(r=>`<div class="row"><span class="k">${r[0]}</span>${r[1]}</div>`).join("")}
+      <p class="cardnote">${c.note}</p>
+    </div>`).join("");
+}
+/* ---------- Callout où part / où arrive ---------- */
+function renderCallout(){
+  const c = mode==="auto" ? [
+    ["Point de départ","<b>Contrôleur</b> (téléphone / PC / terminal série)"],
+    ["Chemin","BLE · Wi-Fi · COM → <b>module</b> → USB HID"],
+    ["Point d'arrivée","La touche est tapée sur la <b>machine cible</b>"],
+    ["Voie retour","STATUS (ready / busy / pong) revient au contrôleur"]
+  ] : [
+    ["Point de départ","<b>Contrôleur</b> connecté au <b>maître</b>"],
+    ["Chemin","BLE/Wi-Fi → maître → <b>lien BLE dédié</b> → esclave → USB HID"],
+    ["Point d'arrivée","La touche est tapée sur la <b>cible de l'esclave</b>"],
+    ["Voie retour","STATUS remonte esclave → maître → contrôleur (ping = RTT)"]
+  ];
+  $("#callout").innerHTML=c.map(x=>`<div class="co"><div class="t">${x[0]}</div><div class="v">${x[1]}</div></div>`).join("");
+}
+
+refresh(true);
+</script>
+</body>
+</html>
