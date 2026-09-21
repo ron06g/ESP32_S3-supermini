@@ -11,7 +11,7 @@
 //   - hors ligne: on sert la copie mise en cache (installation utilisable).
 //  Cohérent avec un outil de pilotage qui doit rester synchro du contrat GATT.
 // ===========================================================================
-const CACHE = 's3kbd-v1';           // ← incrémenter pour forcer un rafraîchissement
+const CACHE = 's3kbd-v3';           // ← incrémenter pour forcer un rafraîchissement
 const SHELL = [
   './',
   './index.html',
@@ -50,7 +50,9 @@ self.addEventListener('fetch', (e) => {
 
   e.respondWith((async () => {
     try {
-      const net = await fetch(req);
+      // cache:'no-cache' = revalide aupres du serveur (sinon le fetch du SW peut
+      // renvoyer une copie du cache HTTP et figer app.js sur un site sans en-tetes).
+      const net = await fetch(req, { cache: 'no-cache' });
       if (net && net.ok && net.type === 'basic') {
         const copy = net.clone();
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});

@@ -14,6 +14,8 @@
 //    LST_CONNECTED bleu fixe                (client BLE connecte)
 //    LST_BUSY      violet qui respire       (sequence / texte en cours)
 //    LST_ERROR     rouge, N clignotements = code d'erreur, pause, repete
+//    LST_SLAVE_WAIT   ambre qui respire     (esclave : en attente du maitre)
+//    LST_SLAVE_LINKED vert doux fixe        (esclave : lie au maitre)
 //
 //  Impulsions (superposees, breves) :
 //    verte   frappe d'une touche  (ledPulse C_GREEN) — visible en repetition
@@ -37,7 +39,8 @@
 #define LED_PULSE_GAP 45  // temps eteint entre 2 impulsions -> repetitions distinctes
 #define LED_QUEUE_LEN 24  // profondeur de la file d'impulsions
 
-typedef enum { LST_BOOT, LST_IDLE, LST_CONNECTED, LST_BUSY, LST_ERROR } LedMode;
+typedef enum { LST_BOOT, LST_IDLE, LST_CONNECTED, LST_BUSY, LST_ERROR,
+               LST_SLAVE_WAIT, LST_SLAVE_LINKED } LedMode;
 
 typedef struct { uint8_t r, g, b; } led_rgb_t;
 typedef struct { uint8_t r, g, b; uint16_t on_ms; } led_pulse_t;
@@ -93,6 +96,8 @@ static led_rgb_t ledRenderBase(uint32_t t) {
     case LST_CONNECTED: return C_BLUE;                               // bleu fixe
     case LST_BUSY:      return ledScale(C_VIOLET, ledTri(t, 700));   // activite
     case LST_ERROR:     return ledRenderError(t);
+    case LST_SLAVE_WAIT:   return ledScale(C_ORANGE, ledTri(t, 1600));  // esclave sans maitre
+    case LST_SLAVE_LINKED: return ledScale(C_GREEN, 110);             // esclave lie
   }
   return C_OFF;
 }

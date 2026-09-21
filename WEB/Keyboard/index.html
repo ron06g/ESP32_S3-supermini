@@ -27,7 +27,7 @@
     <div class="spacer"></div>
     <button id="btnInstall" class="btn primary hidden" title="Installer l'application">⬇ Installer</button>
     <button id="btnFull" class="btn ghost icon" title="Plein écran">⛶</button>
-    <button id="btnLog" class="btn ghost icon" title="Journal">☰</button>
+    <button id="btnCfg" class="btn ghost icon" title="Réglages">⚙️</button>
     <button id="btnConn" class="btn conn primary">Connecter</button>
   </header>
 
@@ -46,6 +46,7 @@
     <button class="tab" data-tab="text"><span class="ti">✍️</span><span class="tl">Texte</span></button>
     <button class="tab" data-tab="macro"><span class="ti">📋</span><span class="tl">Macro</span></button>
     <button class="tab" data-tab="seq"><span class="ti">⏱️</span><span class="tl">Séq.</span></button>
+    <button class="tab" data-tab="gpio"><span class="ti">🔌</span><span class="tl">GPIO</span></button>
   </nav>
 
   <!-- ===================== Contenu ===================== -->
@@ -105,6 +106,71 @@
       <div class="predef">
         <div class="hint">Séquences prédéfinies :</div>
         <div id="seqrow" class="cluster"></div>
+      </div>
+    </section>
+
+    <!-- GPIO : sorties (boutons bascule) + entrées (voyants) -->
+    <section id="tab-gpio" class="tabpage scrollpage">
+      <div class="fngroup"><h3>Sorties (bascule)</h3><div id="gpioOut" class="cluster"></div></div>
+      <div class="fngroup"><h3>Entrées (pull-up, actif bas)</h3><div id="gpioIn" class="cluster"></div></div>
+      <div class="row">
+        <button id="btnGpioRead" class="btn ghost">Relire tout</button>
+        <span class="hint">Nommage = sérigraphie S3 SuperMini (n° de GPIO). BOOT = bouton intégré, sans câblage.
+          Sur un <b>maître</b>, ce sont les broches de l'<b>esclave</b>.</span>
+      </div>
+    </section>
+
+    <!-- Réglages (icône ⚙️ de l'en-tête) : paramètres persistants + appairage + test de liaison -->
+    <section id="tab-cfg" class="tabpage scrollpage">
+      <div class="cfgblock">
+        <h3>Module</h3>
+        <div class="row" style="margin:0 0 8px">
+          <button id="btnLog" class="btn ghost">☰ Journal</button>
+          <span class="hint">Chaque JSON émis et chaque STATUS reçu (outil de validation).</span>
+        </div>
+        <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
+        <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
+        <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
+      </div>
+
+      <div class="cfgblock">
+        <h3>Fonctionnalités</h3>
+        <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Texte, Macro, Séq.</em></label>
+        <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
+        <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>le port USB CDC bascule en mode protocole JSON (au lieu de la console de debug)</em></label>
+        <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
+        <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE</em></label>
+        <div class="row">
+          <span class="hint">Enregistrer <b>redémarre</b> le module (USB ré-énuméré) : reconnectez ensuite.</span>
+          <div class="spacer"></div>
+          <button id="btnCfgSave" class="btn primary">Enregistrer &amp; redémarrer</button>
+        </div>
+      </div>
+
+      <div id="pairBox" class="cfgblock">
+        <h3>Appairage BLE ↔ BLE</h3>
+        <div id="scanBox">
+          <div class="row wrap">
+            <button id="btnScan" class="btn primary">Rechercher un module</button>
+            <span class="hint">Scan de 4 s. Le module cible doit être libre (non connecté à un téléphone).</span>
+          </div>
+          <div id="scanList" class="scanlist"></div>
+        </div>
+        <div id="linkBox" class="hidden">
+          <div class="row wrap">
+            <span>Lien vers l'esclave :</span>
+            <span id="linkState" class="chip led">inconnu</span>
+            <span id="linkRssi" class="chip">RSSI –</span>
+            <div class="spacer"></div>
+            <button id="btnUnbind" class="btn danger">Désappairer</button>
+          </div>
+          <div class="hint">Toutes les sorties (clavier, souris, GPIO, ping) sont transférées à l'esclave. Lien coupé → <code>err:nolink</code>.</div>
+          <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) désappairent le module physiquement, même sans Wi-Fi ni accès web.</div>
+        </div>
+        <div class="row wrap">
+          <button id="btnLinkTest" class="btn">Test liaison (20 pings)</button>
+          <span id="linkTestOut" class="hint">RTT complet web → module → (esclave) → web.</span>
+        </div>
       </div>
     </section>
   </main>

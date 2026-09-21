@@ -26,7 +26,7 @@ set "SKETCH=%S3_DIR%hid_firmware"
 set "GEN=%SKETCH%\tools\gen_web_assets.py"
 
 REM --- FQBN : carte 4 Mo + huge_app + PSRAM + USB-OTG (HID) --------------------
-set "FQBN=esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled"
+set "FQBN=esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled"
 
 call :find_cli
 if errorlevel 1 goto :err_cli

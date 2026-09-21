@@ -26,7 +26,8 @@ Pas de système de build unifié, pas de framework de tests : la validation est 
 
 Le point critique du build est le **FQBN** : `USBMode=default` correspond à
 « USB-OTG (TinyUSB) », **indispensable au HID**. La valeur par défaut de la carte
-est `hwcdc`, qui n'expose **pas** de HID.
+est `hwcdc`, qui n'expose **pas** de HID. `CDCOnBoot=default` (= Disabled) est
+**tout aussi indispensable** depuis que les interfaces USB dépendent de la config NVS.
 
 Depuis l'ajout du transport Wi-Fi, le FQBN inclut aussi `FlashSize=4M`,
 `PartitionScheme=huge_app` (l'app par défaut ~1,3 Mo ne suffit plus) et
@@ -34,14 +35,17 @@ Depuis l'ajout du transport Wi-Fi, le FQBN inclut aussi `FlashSize=4M`,
 
 ```bash
 python S3/hid_firmware/tools/gen_web_assets.py   # écrit S3/hid_firmware/web_assets.h
-arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
-arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
+arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
+arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
 
 - Prérequis : cœur **esp32 ≥ 2.0.14**, bibliothèque **ArduinoJson v7**,
   bibliothèque **WebSockets** (Markus Sattler / Links2004) pour le transport Wi-Fi.
 - Via l'IDE : Board « ESP32S3 Dev Module », **USB Mode = USB-OTG (TinyUSB)**,
-  USB CDC On Boot = Enabled, Upload Mode = UART0 / Hardware CDC.
+  **USB CDC On Boot = Disabled** (le sketch possède la console USB `Console` et
+  appelle lui-même `USB.begin()` après avoir construit les interfaces choisies en
+  NVS ; avec « Enabled » le cœur appelle `USB.begin()` avant `setup()` et le HID
+  disparaît), Upload Mode = UART0 / Hardware CDC.
 - **Après l'upload : appuyer sur RESET** — sinon la carte peut rester en ROM
   (« USB JTAG/serial debug unit ») sans démarrer le firmware.
 - Console série : nouveau port COM à 115200 bauds après RESET.
@@ -92,8 +96,29 @@ USB) est partagé — les deux transports enfilent dans `g_cmdQueue`.
 Commandes JSON UTF-8 sur CMD, champ `t` : `char` (un caractère, mode direct),
 `txt` (chaîne / macro), `key` (touche nommée / média, action `tap`/`down`/`up`),
 `seq` (séquence prédéfinie `n`, personnalisée `s[]`, ou `stop`), `mouse`
-(déplacement `dx/dy`, molette `w`, bouton `b`+`a`). Masque modificateurs `m` :
-bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
+(déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong:n`),
+`cfg` (`a`=`get`/`set` : flags persistants, réponse `cfg:{…}`, `set` redémarre),
+`pair` (`a`=`scan`/`bind`/`slave`/`unbind`/`reset` : appairage BLE↔BLE), `gpio`
+(`p` label, `a`=`set`/`clr`/`tgl`/`read` → `gpio:<label>:<v>`). Masque
+modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr. Les frames STATUS
+font jusqu'à **200 octets** (`STATUS_MAX`) ; les préfixes `cfg:`/`scan:`/`pair:`/
+`link:`/`gpio:`/`pong:` sont des événements, `ready`/`busy`/`err:*` l'état.
+
+**Troisième transport (port COM) et rôles maître/esclave.** L'ESP32-S3 (USB-OTG
+FS, 6 endpoints) ne peut pas héberger clavier + souris + **deux** CDC (composite
+refusé, Windows code 10). Le port COM **réutilise donc l'unique CDC** (`com_port.h`,
+interface 0) : si le flag `serial` est actif, ce CDC parle le protocole (1 ligne =
+1 commande, STATUS en lignes, logs de debug tus) ; sinon il reste la console de
+debug. Deux modules identiques peuvent s'appairer
+(`ble_link.h`) : le **maître** garde BLE + Wi-Fi pour le téléphone et **transfère
+tel quel** tout sauf `cfg`/`pair` à l'**esclave** (client GATT, même service
+HID-Bridge), en relayant ses STATUS (`link:up`/`link:down`/`link:rssi:`) ; lien
+coupé → `err:nolink`, rien n'est frappé localement. L'esclave n'a **pas de
+Wi-Fi**, un BLE réservé au maître (whitelist + vérif MAC) et exécute localement
+HID + GPIO + COM ; `{"t":"pair","a":"reset"}` sur son COM le libère. **5 appuis
+sur BOOT** (GPIO0, < 3 s, tous rôles) = désappairage physique (maître → `unbind`,
+esclave → `reset`). Paramètres
+et rôle sont en NVS (`config.h`, `Preferences`, namespace `s3kbd`).
 
 ### Invariants à ne pas casser
 
@@ -109,6 +134,20 @@ bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
   de commandes (`g_cmdQueue`). Les callbacks BLE ne font qu'enfiler. À la
   déconnexion, la file est vidée et `releaseAll()` est appelé (ne jamais laisser
   une touche collée).
+- **Un seul thread par ressource** : WS TX → tâche `net` ; port COM RX/TX → tâche
+  `com` (`USBCDC::write` peut bloquer 250 ms) ; **client BLE du maître (connect /
+  writeValue / getRssi) → tâche `link` uniquement** (`writeValue` attend un
+  événement GATTC : interdit depuis un callback BLE) ; entrées GPIO → tâche `gpio`.
+  Les callbacks BTC (`onWrite`, notify client) ne font que copier dans une file.
+- **Les interfaces USB sont enregistrées dans les constructeurs** (`USBHIDKeyboard()`,
+  `USBCDC`) : les objets HID sont créés par `new` selon `g_cfg` **avant** `USB.begin()`,
+  qui n'est appelé que par le sketch (FQBN `CDCOnBoot=default`, sinon le cœur l'appelle
+  avant `setup()` et le HID disparaît). **Budget d'endpoints** : au plus clavier+souris
+  (1 interface HID) + **un** CDC ; le port COM réutilise donc la console. Changer un flag
+  USB = sauvegarde NVS + redémarrage ; le numéro de série USB dérive des flags (cache
+  descripteur Windows).
+- **`cfg` et `pair` sont toujours locaux** ; en mode maître tout le reste est
+  transféré (y compris STOP, hors-file des deux côtés).
 - **STOP est hors-file** : détecté dans le callback d'écriture, il vide la file et
   interrompt immédiatement la séquence en cours (`g_stop`) au lieu d'attendre son
   tour.
@@ -118,17 +157,29 @@ bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
 - `hid_firmware.ino` : orchestration (USB HID composite clavier+consumer+souris,
   serveur BLE Bluedroid, parseur ArduinoJson, dispatch, séquenceur, file/worker).
 - `keymap_azerty.h` : table Unicode → frappe(s) HID (voir invariant ci-dessus).
+- `config.h` : paramètres NVS (`cfg_t g_cfg` : flags, rôle, MAC du pair).
+- `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC.
+- `gpio_panel.h` : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11,
+  nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`.
+- `ble_link.h` : scan / bind / unbind (exécutés dans le worker) + tâche `link`
+  du maître (reconnexion, écriture, RSSI, relais des STATUS via `g_linkQueue`).
 - `status_led.h` : indicateur LED RGB WS2812 (GPIO48) dans une tâche dédiée à
-  ~50 Hz. Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
+  ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert). Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
   **impulsion** brève (`ledPulse`) ; il ne pilote jamais la LED directement.
 
 ### Web — fichiers (`WEB/Keyboard/`)
 
 Client Web Bluetooth pensé **smartphone Android en paysage**. `app.js` définit les
-onglets (AZERTY, Num, Fn/Média, Souris, Texte, Macro, Séq.), les **modificateurs
-collants** (clic = one-shot armé, 2ᵉ = verrou, 3ᵉ = off), le garde-fou MTU
-(`MTU_GUARD` 500 o) et le **journal** (chaque JSON émis + chaque STATUS reçu),
-outil de validation. `WEB/index.html` redirige vers `Keyboard/`.
+onglets (AZERTY, Num, Fn/Média, Souris, Texte, Macro, Séq., GPIO ; le panneau
+Réglages s'ouvre par l'icône ⚙️ de l'en-tête et héberge le bouton Journal), les
+**modificateurs collants** (clic = one-shot armé, 2ᵉ = verrou, 3ᵉ = off), le
+garde-fou MTU (`MTU_GUARD` 500 o) et le **journal** (chaque JSON émis + chaque
+STATUS reçu), outil de validation. À la connexion, `onConnected()` envoie
+`cfg get` et `applyFlags()` masque les onglets désactivés (`TAB_FLAGS`).
+Le panneau Réglages porte l'appairage (scan → bind, lien, RSSI, unbind) et le
+**test de liaison** (`linkTest()` : pings numérotés, RTT, pertes). Les libellés
+GPIO (`GPIO_OUT`/`GPIO_IN`) doivent rester alignés sur `gpio_panel.h`.
+`WEB/index.html` redirige vers `Keyboard/`.
 
 ## Références
 

@@ -74,6 +74,7 @@ async function bleConnect() {
     } catch (e) { logLine('err', 'STATUS indisponible: ' + e.name + ' — ' + e.message); }
     deviceName = device.name || 'S3-KBD'; lastStatus = '';
     setConn('on'); logLine('in', 'connecté à ' + deviceName);
+    onConnected();
   } catch (e) {
     setConn('off');
     if (e.name === 'NotFoundError') logLine('err', 'Aucun appareil sélectionné, ou aucun S3-KBD diffusé. (' + e.name + ')');
@@ -86,12 +87,26 @@ function onDisconnected() {
   setConn('off'); logLine('err', 'déconnecté');
 }
 // Statut unifié : appelé par le BLE (après décodage DataView) et par le Wi-Fi (frame texte).
+// Les préfixes cfg:/scan:/pair:/link:/gpio:/pong: sont des ÉVÉNEMENTS (dispatch) ;
+// le reste (ready/busy/err:*) est l'état courant affiché sur le bouton de connexion.
 function handleStatus(text) {
+  logLine('in', 'STATUS ' + text);
+  const i = text.indexOf(':');
+  const pfx = i > 0 ? text.slice(0, i) : text, rest = i > 0 ? text.slice(i + 1) : '';
+  switch (pfx) {
+    case 'cfg':  onCfg(rest);  return;
+    case 'scan': onScan(rest); return;
+    case 'pair': onPair(rest); return;
+    case 'link': onLink(rest); return;
+    case 'gpio': onGpio(rest); return;
+    case 'pong': onPong(rest); return;
+  }
   lastStatus = text;
   if (activeTransport && activeTransport.connected) renderConn();
-  logLine('in', 'STATUS ' + text);
 }
 function onStatus(e) { handleStatus(new TextDecoder().decode(e.target.value)); }
+// Après toute connexion (BLE ou Wi-Fi) : lire la config pour adapter l'IHM.
+function onConnected() { send({ t:'cfg', a:'get' }, true); }
 
 // ===========================================================================
 //  Façade de transport : BLE (existant) + Wi-Fi (WebSocket, résolution A)
@@ -128,7 +143,7 @@ function wifiConnect(ip) {
   try { ws = new WebSocket(url); }
   catch (e) { setConn('off'); logLine('err', 'WebSocket: ' + e.message); return; }
   wifiTransport.ws = ws;
-  ws.onopen    = () => { deviceName = 'S3-KBD (Wi-Fi)'; lastStatus = ''; setConn('on'); logLine('in', 'connecté (Wi-Fi) à ' + ip); };
+  ws.onopen    = () => { deviceName = 'S3-KBD (Wi-Fi)'; lastStatus = ''; setConn('on'); logLine('in', 'connecté (Wi-Fi) à ' + ip); onConnected(); };
   ws.onmessage = (e) => { if (typeof e.data === 'string') handleStatus(e.data); };
   ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
   ws.onerror   = () => logLine('err', 'erreur WebSocket');
@@ -452,6 +467,152 @@ function runSeq() { if (!steps.length) { toast('Séquence vide'); return; } send
 function stopSeq() { send({ t:'seq', n:'stop' }, true); }
 
 // ===========================================================================
+//  Réglages (cfg) — paramètres persistants du module, visibilité des onglets
+// ===========================================================================
+let cfg = null;                       // dernière config reçue (cfg:{…})
+const ROLE_NAMES = ['standard', 'maître', 'esclave'];
+// Onglet -> flag qui le rend visible. Réglages est toujours visible.
+const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb', text:'hid_kb', macro:'hid_kb', seq:'hid_kb',
+                    mouse:'hid_ms', gpio:'gpio' };
+function onCfg(rest) {
+  if (rest === 'saved') { toast('Enregistré — le module redémarre, reconnectez'); return; }
+  try { cfg = JSON.parse(rest); } catch (e) { logLine('err', 'cfg illisible : ' + e.message); return; }
+  renderCfg(); applyFlags(cfg);
+}
+function applyFlags(c) {
+  for (const [tab, flag] of Object.entries(TAB_FLAGS)) {
+    const on = !!c[flag];
+    const t = document.querySelector(`.tab[data-tab="${tab}"]`), p = $('#tab-' + tab);
+    if (t) t.classList.toggle('hidden', !on);
+    if (p) p.classList.toggle('hidden', !on);
+  }
+  const active = document.querySelector('.tab.active');
+  if (active && active.classList.contains('hidden')) toggleCfg();
+  $('#pairBox').classList.toggle('hidden', !c.pair);
+}
+function renderCfg() {
+  document.querySelectorAll('input[data-flag]').forEach((i) => { i.checked = !!cfg[i.dataset.flag]; });
+  $('#cfgMac').textContent = cfg.mac || '–';
+  $('#cfgRole').textContent = ROLE_NAMES[cfg.role] || cfg.role;
+  $('#cfgPeer').textContent = cfg.peer || '–';
+  const master = cfg.role === 1;
+  $('#scanBox').classList.toggle('hidden', master);
+  $('#linkBox').classList.toggle('hidden', !master);
+  if (master) { setLinkState(!!cfg.link); if (cfg.rssi) $('#linkRssi').textContent = 'RSSI ' + cfg.rssi + ' dBm'; }
+}
+function saveCfg() {
+  const o = { t:'cfg', a:'set' };
+  document.querySelectorAll('input[data-flag]').forEach((i) => { o[i.dataset.flag] = i.checked; });
+  send(o, true);
+}
+
+// ===========================================================================
+//  Appairage BLE ↔ BLE (scan / bind / unbind) + état du lien maître→esclave
+// ===========================================================================
+function onScan(rest) {
+  const list = $('#scanList');
+  if (rest === 'done') {
+    $('#btnScan').disabled = false;
+    if (!list.children.length) list.innerHTML = '<div class="empty">Aucun module trouvé (cible libre et sous tension ?).</div>';
+    return;
+  }
+  // scan:<mac>:<rssi>:<name> — la MAC contient des ':' mais fait toujours 17 caractères.
+  const mac = rest.slice(0, 17), r2 = rest.slice(18), j = r2.indexOf(':');
+  const rssi = j > 0 ? r2.slice(0, j) : r2, name = j > 0 ? r2.slice(j + 1) : '';
+  const el = document.createElement('div'); el.className = 'scanitem';
+  el.innerHTML = `<b>${esc(name || '?')}</b><span class="mac">${esc(mac)}</span><span class="rssi">${esc(rssi)} dBm</span>`;
+  const b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'Appairer';
+  b.addEventListener('click', () => {
+    if (!confirm('Faire de ' + (name || mac) + ' l\'ESCLAVE de ce module ?\nLes deux modules redémarrent.')) return;
+    b.disabled = true; send({ t:'pair', a:'bind', mac }, true);
+  });
+  el.appendChild(b); list.appendChild(el);
+}
+function startScan() {
+  $('#scanList').innerHTML = ''; $('#btnScan').disabled = true;
+  send({ t:'pair', a:'scan' }, true);
+  setTimeout(() => { $('#btnScan').disabled = false; }, 8000);   // filet si scan:done n'arrive pas
+}
+function onPair(rest) {
+  if (rest === 'ok') toast('Appairage : OK — redémarrage'); else toast('Appairage : ' + rest);
+}
+function setLinkState(up) {
+  const el = $('#linkState'); el.textContent = up ? 'connecté' : 'coupé';
+  el.classList.toggle('on', up); el.classList.toggle('off', !up);
+}
+function onLink(rest) {
+  if (rest === 'up') { setLinkState(true); return; }
+  if (rest === 'down') { setLinkState(false); $('#linkRssi').textContent = 'RSSI –'; return; }
+  if (rest.startsWith('rssi:')) { $('#linkRssi').textContent = 'RSSI ' + rest.slice(5) + ' dBm'; }
+}
+function unbind() {
+  if (!confirm('Désappairer ? Les deux modules reviennent en mode standard et redémarrent.')) return;
+  send({ t:'pair', a:'unbind' }, true);
+}
+
+// ===========================================================================
+//  Test de liaison : pings numérotés, RTT min/moy/max, pertes
+// ===========================================================================
+const pendingPings = new Map();       // n -> { t0, resolve, timer }
+let pingSeq = 0;
+function ping(timeoutMs = 1500) {
+  const n = ++pingSeq;
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const timer = setTimeout(() => { pendingPings.delete(n); resolve(null); }, timeoutMs);
+    pendingPings.set(n, { t0, resolve, timer });
+    send({ t:'ping', n });
+  });
+}
+function onPong(rest) {
+  const p = pendingPings.get(+rest); if (!p) return;
+  clearTimeout(p.timer); pendingPings.delete(+rest);
+  p.resolve(performance.now() - p.t0);
+}
+async function linkTest(N = 20, gapMs = 100) {
+  const out = $('#linkTestOut'), btn = $('#btnLinkTest');
+  if (!activeTransport || !activeTransport.connected) { toast('Non connecté'); return; }
+  btn.disabled = true; const rtts = [];
+  for (let i = 0; i < N; i++) {
+    const r = await ping(); if (r !== null) rtts.push(r);
+    out.textContent = `ping ${i + 1}/${N} — ${r === null ? 'perdu' : r.toFixed(0) + ' ms'}`;
+    await new Promise((res) => setTimeout(res, gapMs));
+  }
+  btn.disabled = false;
+  if (!rtts.length) { out.textContent = `${N} pings, 100 % perdus`; return; }
+  const min = Math.min(...rtts), max = Math.max(...rtts), avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+  const rssi = $('#linkRssi').textContent;
+  out.textContent = `${rtts.length}/${N} reçus · RTT min ${min.toFixed(0)} / moy ${avg.toFixed(0)} / max ${max.toFixed(0)} ms` +
+    ` · pertes ${(100 * (N - rtts.length) / N).toFixed(0)} %` + (cfg && cfg.role === 1 ? ' · ' + rssi : '');
+  logLine('in', 'TEST LIAISON ' + out.textContent);
+}
+
+// ===========================================================================
+//  GPIO — sorties (bascule) et entrées (voyants). Libellés = table du firmware
+//  (gpio_panel.h) : BOOT + sorties 4..7 + entrées 8..11.
+// ===========================================================================
+const GPIO_OUT = ['4', '5', '6', '7'];
+const GPIO_IN  = ['BOOT', '8', '9', '10', '11'];
+function buildGpio() {
+  const out = $('#gpioOut'), inn = $('#gpioIn'); out.innerHTML = ''; inn.innerHTML = '';
+  for (const p of GPIO_OUT) {
+    const el = document.createElement('div'); el.className = 'key nav gpio'; el.dataset.gpio = p; el.textContent = p;
+    el.addEventListener('click', () => { flash(el); send({ t:'gpio', p, a:'tgl' }); });
+    out.appendChild(el);
+  }
+  for (const p of GPIO_IN) {
+    const el = document.createElement('span'); el.className = 'chip led'; el.dataset.gpio = p; el.textContent = p;
+    inn.appendChild(el);
+  }
+}
+function onGpio(rest) {
+  const j = rest.lastIndexOf(':'); if (j < 0) return;
+  const label = rest.slice(0, j), v = rest.slice(j + 1) === '1';
+  document.querySelectorAll(`[data-gpio="${label}"]`).forEach((el) => el.classList.toggle('on', v));
+}
+function readGpio() { send({ t:'gpio', a:'read' }); }
+
+// ===========================================================================
 //  Journal / toast / util
 // ===========================================================================
 function esc(s) { return String(s).replace(/[&<>"]/g, (c2) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c2])); }
@@ -476,6 +637,16 @@ function flash(el) { el.classList.add('flash'); setTimeout(() => el.classList.re
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tabpage').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + name));
+  $('#btnCfg').classList.toggle('active', name === 'cfg');   // Réglages = icône de l'en-tête, pas un onglet
+  if (name === 'gpio' && activeTransport && activeTransport.connected) readGpio();   // état réel à l'ouverture
+}
+// Bascule Réglages <-> dernier onglet visité.
+let lastTab = 'azerty';
+function toggleCfg() {
+  const cur = document.querySelector('.tab.active');
+  if (cur) { lastTab = cur.dataset.tab; switchTab('cfg'); return; }
+  const back = document.querySelector(`.tab[data-tab="${lastTab}"]:not(.hidden)`) || document.querySelector('.tab:not(.hidden)');
+  switchTab(back ? back.dataset.tab : 'cfg');
 }
 function updateEnv() {
   const coarse = matchMedia('(pointer:coarse)').matches;
@@ -513,6 +684,7 @@ async function toggleFullscreen() {
 function wireUI() {
   $('#btnConn').addEventListener('click', onConnClick);
   $('#btnFull').addEventListener('click', toggleFullscreen);
+  $('#btnCfg').addEventListener('click', toggleCfg);
   $('#btnLog').addEventListener('click', () => $('#logDrawer').classList.toggle('hidden'));
   $('#btnLogClose').addEventListener('click', () => $('#logDrawer').classList.add('hidden'));
   $('#btnLogClear').addEventListener('click', () => { $('#log').innerHTML = ''; });
@@ -536,6 +708,13 @@ function wireUI() {
     const d = e.target.closest('[data-del]'); if (!d) return;
     steps.splice(+d.dataset.del, 1); renderSteps();
   });
+
+  // Réglages / appairage / GPIO
+  $('#btnCfgSave').addEventListener('click', saveCfg);
+  $('#btnScan').addEventListener('click', startScan);
+  $('#btnUnbind').addEventListener('click', unbind);
+  $('#btnLinkTest').addEventListener('click', () => linkTest());
+  $('#btnGpioRead').addEventListener('click', readGpio);
 
   matchMedia('(orientation:landscape)').addEventListener('change', updateEnv);
   window.addEventListener('resize', updateEnv);
@@ -589,6 +768,7 @@ function init() {
   buildKeyboard('#kb-num', KB_NUM);
   buildFn();
   buildSeqRow();
+  buildGpio();
   renderSteps();
   refreshMacroLen();
   refreshMods();
@@ -597,7 +777,7 @@ function init() {
   wireUI();
   updateEnv();
 
-  logLine('in', '=== app.js v5 (transport BLE + Wi-Fi) chargé ===');
+  logLine('in', '=== app.js v6 (BLE + Wi-Fi, réglages, appairage, GPIO) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

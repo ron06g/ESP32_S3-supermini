@@ -14,6 +14,10 @@ média) et un serveur BLE recevant les commandes du site web.
 | `keymap_azerty.h` | **Table AZERTY** (caractère Unicode → touche HID + modificateurs) — pièce critique |
 | `status_led.h` | Indicateur LED RGB WS2812 (tâche dédiée) |
 | `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
+| `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair |
+| `com_port.h` | **Port COM** : réutilise l'unique CDC (interface 0) en mode protocole (1 ligne JSON = 1 commande, 1 STATUS = 1 ligne). Pas de 2ᵉ CDC (budget d'endpoints S3) |
+| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11), scrutation anti-rebond |
+| `ble_link.h` | **Appairage BLE ↔ BLE** : scan, bind/unbind, tâche `link` (le maître est client GATT de l'esclave) |
 | `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
 | `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
 
@@ -45,7 +49,7 @@ code de référence fourni. Les équivalents utilisés :
 |---|---|
 | Board | **ESP32S3 Dev Module** |
 | **USB Mode** | **USB-OTG (TinyUSB)** ← indispensable pour le HID |
-| USB CDC On Boot | **Enabled** (logs `Serial` sur l'USB natif) |
+| USB CDC On Boot | **Disabled** — le sketch crée lui-même la console USB (`Console`, CDC 0) et appelle `USB.begin()` **après** avoir construit les interfaces choisies en NVS. Avec *Enabled*, le cœur appelle `USB.begin()` avant `setup()` : plus aucun HID |
 | Upload Mode | UART0 / Hardware CDC |
 | Flash Size | **4 MB** — carte en main = SuperMini **N4R2** ; `FlashSize=4M`. ⚠️ `8M` fait **boucler le boot** (`spi_flash: Detected size(4096k) smaller than … header(8192k)`) |
 | Partition Scheme | **Huge APP (3 MB No OTA / 1 MB SPIFFS)** — requis pour loger BLE + Wi-Fi + USB + app (tient dans 4 Mo) |
@@ -64,11 +68,12 @@ code de référence fourni. Les équivalents utilisés :
 
 ```bash
 # FQBN : USBMode=default = « USB-OTG (TinyUSB) » (INDISPENSABLE au HID).
+# CDCOnBoot=default (= Disabled) : INDISPENSABLE aussi (interfaces USB choisies en NVS).
 # Attention : la valeur par défaut de la carte est hwcdc, qui n'a PAS de HID.
 # Depuis l'ajout du Wi-Fi : FlashSize=4M + PartitionScheme=huge_app (l'app par
 # défaut ~1,3 Mo ne suffit plus) + PSRAM=enabled (déporte les allocs WiFi/LWIP).
-arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
-arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=cdc,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
+arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
+arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
 
 > **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` (régénère `web_assets.h`
@@ -108,6 +113,55 @@ redémarrage. Contrainte de plateforme : une page **HTTPS** ne pourrait pas pilo
 `ws://192.168.4.1` (contenu mixte) — d'où l'app servie **en HTTP par le S3**
 (résolution A), seule option compatible iOS et hors-ligne.
 
+## Paramètres, port COM, GPIO, appairage — évolution
+
+Tout est piloté par le **même protocole JSON** (BLE, WebSocket ou port COM) :
+
+| Commande | Effet | Réponse STATUS |
+|---|---|---|
+| `{"t":"ping","n":12}` | test de liaison (exécuté par le module final : l'esclave si maître) | `pong:12` |
+| `{"t":"cfg","a":"get"}` | lire la config | `cfg:{"hid_kb":1,"hid_ms":1,"serial":0,"gpio":1,"pair":1,"role":0,"mac":"…","peer":"","link":0,"rssi":0}` |
+| `{"t":"cfg","a":"set","hid_kb":true,"hid_ms":false,"serial":true,"gpio":true,"pair":true}` | sauver en NVS puis **redémarrer** (USB ré-énuméré) | `cfg:saved` |
+| `{"t":"pair","a":"scan"}` | scan BLE 4 s des modules annonçant le service HID-Bridge | `scan:<mac>:<rssi>:<nom>` ×N puis `scan:done` |
+| `{"t":"pair","a":"bind","mac":"aa:bb:cc:dd:ee:ff"}` | devenir **maître** de ce module (ordre `slave` envoyé, attente `pair:ok`) | `pair:ok` + reboot, sinon `err:pair` |
+| `{"t":"pair","a":"slave","mac":"<maître>"}` | (reçu du maître) devenir **esclave** | `pair:ok` + reboot |
+| `{"t":"pair","a":"unbind"}` | (maître) libérer l'esclave puis soi-même | `pair:ok` + reboot |
+| `{"t":"pair","a":"reset"}` | **retour au mode standard** — c'est la commande à envoyer sur le **port COM** d'un esclave orphelin | `pair:ok` + reboot |
+| **5 appuis sur le bouton BOOT** (< 3 s) | désappairage **physique** (aucun web/COM requis) : maître → `unbind`, esclave → `reset` | `pair:ok` + reboot |
+| `{"t":"gpio","p":"4","a":"set\|clr\|tgl\|read"}` / `{"t":"gpio","a":"read"}` | sortie / lecture (`read` sans `p` = tout) | `gpio:<label>:<0\|1>` (aussi spontané sur changement d'entrée) |
+| — | événements du lien (maître) | `link:up`, `link:down`, `link:rssi:-62` (toutes les 2 s) |
+
+Erreurs : `err:nolink` (maître sans esclave joignable — rien n'est frappé localement),
+`err:nohid` (interface HID désactivée), `err:gpio`, `err:pair`.
+
+**Désappairage physique** : **5 appuis sur le bouton BOOT** (GPIO0) en moins de 3 s ramènent
+le module en mode standard, quel que soit son rôle et même si Wi-Fi/BLE/GPIO sont coupés
+(tâche `bootResetTask` autonome). Chaque appui = impulsion LED violette ; un maître libère
+d'abord son esclave (`unbind`), un esclave fait `reset`.
+
+**Rôles** (persistants en NVS) :
+
+- **standard** : comportement d'origine (BLE + Wi-Fi + USB local) ;
+- **maître** : garde BLE + Wi-Fi pour le téléphone ; une tâche `link` reste client GATT de
+  l'esclave (reconnexion toutes les 3 s, RSSI toutes les 2 s) ; **tout** sauf `cfg`/`pair`
+  est **transféré tel quel** à l'esclave, ses STATUS sont relayés tels quels (RTT complet
+  avec `ping`). STOP est transféré hors-file ;
+- **esclave** : **pas de Wi-Fi**, BLE réservé au maître (whitelist + vérification de MAC),
+  HID clavier/souris + COM + GPIO exécutés localement. LED : ambre qui respire (sans
+  maître), vert doux (lié).
+
+**Port COM** : l'ESP32-S3 (USB-OTG FS, 6 endpoints) ne peut PAS exposer clavier + souris +
+**deux** CDC — le composite est refusé par l'hôte (Windows code 10). Le port COM **réutilise
+donc l'unique CDC** : quand `serial` est actif, ce CDC parle le protocole (1 ligne = 1 commande,
+STATUS en lignes) et les logs de debug sont tus pour garder le flux propre ; quand `serial` est
+inactif, le même CDC est la **console** de debug. Vitesse nominale (USB CDC l'ignore : 9600 8N1
+côté hôte convient). Le **numéro de série USB** dérive des flags (`S3KBD-KMS`, `x` = désactivé)
+pour que Windows ré-énumère proprement chaque combinaison.
+
+**GPIO** : `gpio_panel.h`, table unique `GPIO_TABLE[]` — `BOOT` (GPIO0, bouton intégré),
+sorties `4 5 6 7`, entrées `8 9 10 11` (pull-up, **1 = actif = niveau bas**). Non scruté sur
+un maître (les GPIO commandés sont ceux de l'esclave).
+
 ## Tester le lot seul (sans le site web)
 
 Avec un client BLE générique (**nRF Connect**, LightBlue…) :
@@ -122,6 +176,9 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
    - Séquence tempo (socle §5.3) : `{"t":"seq","s":[{"tap":"1"},{"wait":1000},{"tap":"2"},{"wait":1000},{"rep":3,"every":4000,"tap":"3"}]}`.
    - Arrêt : `{"t":"seq","n":"stop"}`.
 3. S'abonner à **STATUS** (`…-0002`) pour voir `ready` / `busy` / `err:…`.
+4. Nouveautés : `{"t":"ping","n":1}` → `pong:1` ; `{"t":"cfg","a":"get"}` → `cfg:{…}` ;
+   `{"t":"gpio","p":"4","a":"tgl"}` → `gpio:4:1`. Sur le **port COM** (PuTTY, une ligne
+   par commande) : `{"t":"pair","a":"reset"}` libère un esclave.
 
 ## Contrat GATT (rappel)
 
@@ -143,7 +200,10 @@ Format des commandes : **JSON UTF-8** (socle §5.2). La traduction AZERTY→HID 
 - **Bluedroid + USB** cohabitent mais sont gourmands en RAM ; en cas d'instabilité
   mémoire, basculer la pile BLE sur **NimBLE-Arduino** (plus légère, recommandée
   par le socle) est l'évolution naturelle.
-- Une seule connexion cliente à la fois (conforme au mock).
+- Une seule connexion cliente à la fois (conforme au mock). Un module déjà connecté à un
+  téléphone n'annonce plus : il n'apparaît pas dans un scan d'appairage.
+- Les frames STATUS font jusqu'à **200 octets** (`cfg:{…}`) : un MTU BLE ≥ 150 est requis
+  (Android/Chrome, Windows et nRF Connect négocient 517 ; log `[BLE] MTU=`).
 - Majuscules accentuées et touches mortes exotiques hors couverture (spec S3 §6) :
   caractère absent de la table → ignoré + `err:unmapped`, jamais de frappe au hasard.
 

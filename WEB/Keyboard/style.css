@@ -35,6 +35,7 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
 .btn.primary:hover { background:var(--accent); }
 .btn.ghost { background:transparent; } .btn.danger { background:#4a1d1d; border-color:var(--red); color:#ffb4ae; }
 .btn.icon { padding:6px 9px; font-size:15px; }
+.btn.icon.active { background:var(--bg-key-hi); border-color:var(--accent); }
 
 /* Bouton connexion fusionné (état + action) */
 .btn.conn { display:inline-flex; align-items:center; gap:7px; }
@@ -168,13 +169,23 @@ body.is-phone.landscape .btn { padding:6px 10px; font-size:13px; }
 body.is-phone.landscape .tab { padding:5px 9px; }
 body.is-phone.landscape .tab .tl { display:none; }
 body.is-phone.landscape .tab .ti { font-size:19px; }
+/* Téléphone (les 2 orientations) : 9 onglets doivent TOUS rester visibles sans
+   défilement (PWA) -> icône seule, largeur répartie, jamais de débordement. */
+body.is-phone .tabs { gap:0; }
+body.is-phone .tab { flex:1 1 0; min-width:0; justify-content:center; padding:6px 0; gap:0; }
+body.is-phone .tab .tl { display:none; }
+body.is-phone .tab .ti { font-size:clamp(15px,4.6vw,20px); }
+body.is-phone .btn.conn { max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 body.is-phone.landscape .content { padding:4px 0; }
 body.is-phone.landscape .key { border-radius:7px; }
 
 /* Onglets intégrés au header en paysage mobile : gagne une ligne de hauteur */
 body.tabs-in-header .topbar { flex-wrap:nowrap; gap:6px; }
 body.tabs-in-header #tabs { flex:1; min-width:0; border-bottom:none; }
-body.tabs-in-header #tabs .tab { padding:5px 8px; border-bottom:none; border-radius:8px; }
+body.tabs-in-header #tabs { display:flex; overflow:hidden; }
+body.tabs-in-header #tabs .tab { flex:1 1 0; min-width:0; padding:4px 0; border-bottom:none; border-radius:8px; }
+body.tabs-in-header #tabs .tab .ti { font-size:clamp(14px,2.4vw,19px); }
+body.tabs-in-header .btn.icon { padding:5px 7px; }
 body.tabs-in-header #tabs .tab.active { background:var(--bg-key-hi); color:var(--text); }
 
 /* Téléphone PORTRAIT : clavier limité à ~50% de la hauteur, ancré en bas */
@@ -187,3 +198,30 @@ body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
   .kbpage.active { justify-content:center; }
   #kb-azerty, #kb-num { max-height:600px; }
 }
+
+/* ===========================================================================
+   Réglages / appairage / GPIO
+   =========================================================================== */
+.cfgblock { background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
+  padding:12px 14px; margin-bottom:12px; }
+.cfgblock h3 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim);
+  margin:0 0 8px; font-weight:700; }
+.kv { display:flex; justify-content:space-between; gap:12px; padding:4px 0; font-size:14px; }
+.kv span { color:var(--text-dim); } .kv b { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
+.switch { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); cursor:pointer; }
+.switch:last-of-type { border-bottom:none; }
+.switch input { width:22px; height:22px; accent-color:var(--accent); flex:0 0 auto; }
+.switch span { font-weight:600; min-width:130px; }
+.switch em { color:var(--text-dim); font-style:normal; font-size:12px; }
+.scanlist { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+.scanitem { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--bg-key); border:1px solid var(--border);
+  border-radius:8px; padding:8px 10px; font-size:14px; }
+.scanitem .mac { font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--text-dim); font-size:12px; }
+.scanitem .rssi { color:var(--text-dim); font-size:12px; }
+.scanitem .btn { margin-left:auto; }
+.chip.led { border-color:var(--text-dim); }
+.chip.led.on { background:#123021; border-color:var(--green); color:#b7f0c6; }
+.chip.led.off { background:#4a1d1d; border-color:var(--red); color:#ffb4ae; }
+.cluster .key.gpio { min-width:64px; }
+.key.gpio.on { background:#123021; border-color:var(--green); color:#b7f0c6; }
+.cluster .chip.led { padding:10px 14px; font-size:14px; cursor:default; }

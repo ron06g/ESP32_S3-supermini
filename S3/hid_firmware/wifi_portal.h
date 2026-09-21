@@ -15,8 +15,10 @@
 //      file drainée ici.
 //
 //  Fournis par hid_firmware.ino (déclarations avancées, avant l'include) :
+//    #define STATUS_MAX 200   (taille max d'une frame STATUS)
 //    static void enqueueCommand(const uint8_t* data, size_t len);
 //    static void releaseAll();
+//    static USBCDC Console;   (console debug)
 //  Dépendance bibliothèque : « WebSockets » de Markus Sattler (Links2004).
 // ============================================================================
 #pragma once
@@ -50,12 +52,12 @@ static WebSocketsServer wsServer(WS_PORT);
 //  File de statut vers la tâche réseau (broadcast WS fait UNIQUEMENT par elle)
 // ---------------------------------------------------------------------------
 static QueueHandle_t g_statusQueue = nullptr;
-static char          g_lastStatus[32] = "ready";
+static char          g_lastStatus[STATUS_MAX] = "ready";   // etat courant (ready/busy) pour un nouveau client
 
 // Appelable depuis n'importe quelle tâche (worker, callbacks). Ne touche PAS le WS.
 static void wifiQueueStatus(const char* s) {
   if (!g_statusQueue || !s) return;
-  char item[32];
+  char item[STATUS_MAX];
   strncpy(item, s, sizeof(item) - 1);
   item[sizeof(item) - 1] = 0;
   xQueueSend(g_statusQueue, item, 0);          // silencieux si pleine (état transitoire)
@@ -97,14 +99,14 @@ static void wifiOnWsEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t l
   switch (type) {
     case WStype_CONNECTED:
       wsServer.sendTXT(num, g_lastStatus);       // état courant à la connexion (ex. "ready")
-      Serial.printf("[WS] client #%u connecte\n", num);
+      DBG("[WS] client #%u connecte\n", num);
       break;
     case WStype_TEXT:
       enqueueCommand(payload, len);              // ne fait qu'enfiler (worker = USB)
       break;
     case WStype_DISCONNECTED:
       releaseAll();                              // libère toute touche maintenue (pas de purge)
-      Serial.printf("[WS] client #%u deconnecte\n", num);
+      DBG("[WS] client #%u deconnecte\n", num);
       break;
     default:
       break;
@@ -120,11 +122,15 @@ static void wifiNetTask(void* arg) {
     httpServer.handleClient();
     wsServer.loop();
 
-    char item[32];
+    char item[STATUS_MAX];
     while (xQueueReceive(g_statusQueue, item, 0) == pdTRUE) {
-      strncpy(g_lastStatus, item, sizeof(g_lastStatus) - 1);
-      g_lastStatus[sizeof(g_lastStatus) - 1] = 0;
-      wsServer.broadcastTXT(g_lastStatus);       // diffusion : SEULE la tâche réseau émet
+      // Seuls ready/busy sont un « état courant » (rejoué à un nouveau client) ;
+      // pong:/gpio:/scan:/cfg: sont des événements ponctuels.
+      if (!strcmp(item, "ready") || !strcmp(item, "busy")) {
+        strncpy(g_lastStatus, item, sizeof(g_lastStatus) - 1);
+        g_lastStatus[sizeof(g_lastStatus) - 1] = 0;
+      }
+      wsServer.broadcastTXT(item);               // diffusion : SEULE la tâche réseau émet
     }
     vTaskDelay(1);
   }
@@ -150,13 +156,13 @@ static void wifiRegisterRoutes() {
 //  Init du transport Wi-Fi — appelé depuis setup(), APRÈS l'init BLE
 // ---------------------------------------------------------------------------
 static void wifiPortalBegin() {
-  g_statusQueue = xQueueCreate(8, 32);           // 8 statuts de 32 octets
+  g_statusQueue = xQueueCreate(16, STATUS_MAX);  // 16 statuts de STATUS_MAX octets
 
   WiFi.mode(WIFI_AP);                             // AP seul (moins de RAM que AP_STA)
   WiFi.softAPConfig(AP_IP, AP_IP, AP_MASK);      // IP/passerelle fixes AVANT softAP
   bool ok = WiFi.softAP(AP_SSID, AP_PSK, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
   WiFi.setSleep(false);                           // pas de modem-sleep : captif + WS réactifs
-  Serial.printf("[WiFi] SoftAP '%s' %s — IP %s\n",
+  DBG("[WiFi] SoftAP '%s' %s — IP %s\n",
                 AP_SSID, ok ? "OK" : "ECHEC (cle < 8 car. ?)",
                 WiFi.softAPIP().toString().c_str());
 
@@ -170,5 +176,5 @@ static void wifiPortalBegin() {
 
   // Tâche réseau sur le core 0 (le worker HID reste seul sur le core 1, prio 5).
   xTaskCreatePinnedToCore(wifiNetTask, "net", 8192, nullptr, 4, nullptr, 0);
-  Serial.println("[WiFi] portail captif + WebSocket prets (ws://192.168.4.1:81/)");
+  DBGLN("[WiFi] portail captif + WebSocket prets (ws://192.168.4.1:81/)");
 }

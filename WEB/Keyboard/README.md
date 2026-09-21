@@ -26,6 +26,13 @@ verrouillage paysage best-effort) et **journal en tiroir** (☰) pour libérer l
 | **Texte** | saisie au **clavier physique/OS** du téléphone, **envoi en direct** (diff → `txt` / `Backspace`) |
 | **Macro** | texte envoyé en une fois (`txt`), garde-fou MTU, macros mémorisées (session) |
 | **Séq.** | éditeur frappe/attente/répétition + préréglage démo + **Stop** + séquences prédéfinies |
+| **GPIO** | sorties 4–7 (boutons bascule) et entrées BOOT, 8–11 (voyants) — `{"t":"gpio",…}` / `gpio:<label>:<v>` ; sur un maître, ce sont les broches de l'esclave |
+| **⚙️ Réglages** (icône de l'en-tête, à côté de « Connecter » ; contient aussi le bouton **Journal**) | config persistante du module (interrupteurs HID clavier / souris / COM / GPIO / appairage → `cfg set` + redémarrage), **appairage BLE ↔ BLE** (Rechercher → Appairer, état du lien, RSSI, Désappairer) et **Test liaison** (20 pings : RTT min/moy/max, pertes) |
+
+À la connexion, l'app envoie `{"t":"cfg","a":"get"}` ; la réponse `cfg:{…}` **masque les
+onglets** des fonctions désactivées (clavier → AZERTY/Num/Fn/Texte/Macro/Séq., souris,
+GPIO) et la section Appairage si `pair` est à 0. Les STATUS préfixés (`cfg:`, `scan:`,
+`pair:`, `link:`, `gpio:`, `pong:`) sont des événements dispatchés dans `handleStatus`.
 
 - **Connexion BLE** filtrée sur le service `9f1d0000-…-1001` (socle §5.1), notifications
   **STATUS**, indicateur d'état + reconnexion, **diagnostic** au chargement (contexte
