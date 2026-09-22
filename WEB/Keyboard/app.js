@@ -5,7 +5,6 @@
 const SERVICE_UUID = '9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const CMD_UUID     = '9f1d0001-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const STATUS_UUID  = '9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001';
-const MTU_GUARD    = 500;
 const MOD = { ctrl:1, shift:2, alt:4, gui:8, altgr:16 };
 
 let device=null, gatt=null, cmdChar=null, statusChar=null;
@@ -248,10 +247,6 @@ const FN_GROUPS = [
     k('ArrowLeft','←','fn nav'), k('ArrowUp','↑','fn nav'), k('ArrowDown','↓','fn nav'), k('ArrowRight','→','fn nav') ] },
   { title:'Raccourcis', shortcuts: SHORTCUTS },
 ];
-const SEQ_BUTTONS = [
-  ['ctrl_alt_del','Ctrl+Alt+Suppr'], ['ctrl_esc','Ctrl+Échap'],
-  ['alt_tab','Alt+Tab'], ['alt_f4','Alt+F4'], ['win_d','Win+D'],
-];
 
 // ===========================================================================
 //  Rendu des touches
@@ -303,14 +298,6 @@ function buildFn() {
       for (const d of g.keys) cl.appendChild(makeKey(d));
     }
     grp.appendChild(cl); box.appendChild(grp);
-  }
-}
-function buildSeqRow() {
-  const box = $('#seqrow'); box.innerHTML = '';
-  for (const [name, label] of SEQ_BUTTONS) {
-    const el = document.createElement('div'); el.className = 'key nav'; el.textContent = label;
-    el.addEventListener('click', () => { flash(el); send({ t:'seq', n:name }, true); });
-    box.appendChild(el);
   }
 }
 
@@ -387,6 +374,16 @@ function initMouse() {
 function initTextPass() {
   const ta = $('#passText'); let oldVal = '';
   const live = () => $('#liveToggle').checked;
+  // Fenêtre de saisie (ouverte par le bouton « Texte » de l'onglet Souris).
+  // Focus immédiat sur le textarea → fait apparaître le clavier du smartphone.
+  const openText = () => {
+    $('#textInput').classList.remove('hidden');
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  };
+  const closeText = () => $('#textInput').classList.add('hidden');
+  $('#btnTextInput').addEventListener('click', openText);
+  $('#btnTextClose').addEventListener('click', closeText);
+  $('#textInput').addEventListener('click', (e) => { if (e.target.id === 'textInput') closeText(); });
   $('#liveToggle').addEventListener('change', () => { oldVal = ta.value; });
   ta.addEventListener('input', () => {
     if (!live()) return;
@@ -401,31 +398,6 @@ function initTextPass() {
   $('#btnPassSend').addEventListener('click', () => {
     if (!ta.value) { toast('Vide'); return; }
     send({ t:'txt', v:ta.value }, true); oldVal = ta.value;
-  });
-}
-
-// ===========================================================================
-//  Macro
-// ===========================================================================
-function macroBytes() { return new TextEncoder().encode($('#macroText').value).length; }
-function refreshMacroLen() {
-  const n = macroBytes(); const el = $('#macroLen');
-  el.textContent = n + ' octet' + (n > 1 ? 's' : '') + (n > MTU_GUARD ? ' ⚠️ > ' + MTU_GUARD : '');
-  el.style.color = n > MTU_GUARD ? 'var(--red)' : 'var(--text-dim)';
-}
-function sendMacro() {
-  const t = $('#macroText').value; if (!t) { toast('Texte vide'); return; }
-  if (macroBytes() > MTU_GUARD) { toast('Texte trop long (> ' + MTU_GUARD + ' o)'); return; }
-  send({ t:'txt', v:t }, true);
-}
-const savedMacros = [];
-function saveMacro() { const t = $('#macroText').value.trim(); if (t) { savedMacros.push(t); renderMacros(); } }
-function renderMacros() {
-  const box = $('#macroList'); box.innerHTML = '';
-  savedMacros.forEach((tx) => {
-    const c2 = document.createElement('div'); c2.className = 'chip'; c2.textContent = tx; c2.title = tx;
-    c2.addEventListener('click', () => { $('#macroText').value = tx; refreshMacroLen(); });
-    box.appendChild(c2);
   });
 }
 
@@ -467,12 +439,31 @@ function runSeq() { if (!steps.length) { toast('Séquence vide'); return; } send
 function stopSeq() { send({ t:'seq', n:'stop' }, true); }
 
 // ===========================================================================
+//  Texte / macro rapide — mémorisation depuis la popup clavier (onglet Souris).
+//  💾 enregistre le texte courant ; les chips le rechargent dans la zone de saisie.
+// ===========================================================================
+const savedMacros = [];
+function saveMacro() {
+  const t = $('#passText').value.trim();
+  if (!t) { toast('Texte vide'); return; }
+  savedMacros.push(t); renderMacros(); toast('Mémorisé');
+}
+function renderMacros() {
+  const box = $('#macroList'); box.innerHTML = '';
+  savedMacros.forEach((tx) => {
+    const c2 = document.createElement('div'); c2.className = 'chip'; c2.textContent = tx; c2.title = tx;
+    c2.addEventListener('click', () => { const ta = $('#passText'); ta.value = tx; ta.focus(); });
+    box.appendChild(c2);
+  });
+}
+
+// ===========================================================================
 //  Réglages (cfg) — paramètres persistants du module, visibilité des onglets
 // ===========================================================================
 let cfg = null;                       // dernière config reçue (cfg:{…})
 const ROLE_NAMES = ['standard', 'maître', 'esclave'];
 // Onglet -> flag qui le rend visible. Réglages est toujours visible.
-const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb', text:'hid_kb', macro:'hid_kb', seq:'hid_kb',
+const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb',
                     mouse:'hid_ms', gpio:'gpio' };
 function onCfg(rest) {
   if (rest === 'saved') { toast('Enregistré — le module redémarre, reconnectez'); return; }
@@ -487,8 +478,13 @@ function applyFlags(c) {
     if (p) p.classList.toggle('hidden', !on);
   }
   const active = document.querySelector('.tab.active');
-  if (active && active.classList.contains('hidden')) toggleCfg();
+  if (active && active.classList.contains('hidden')) {
+    const first = document.querySelector('.tab:not(.hidden)');
+    if (first) switchTab(first.dataset.tab); else toggleCfg();
+  }
   $('#pairBox').classList.toggle('hidden', !c.pair);
+  // Bouton « Texte » (dans l'onglet Souris) : c'est une fonction clavier.
+  $('#btnTextInput').classList.toggle('hidden', !c.hid_kb);
 }
 function renderCfg() {
   document.querySelectorAll('input[data-flag]').forEach((i) => { i.checked = !!cfg[i.dataset.flag]; });
@@ -641,7 +637,7 @@ function switchTab(name) {
   if (name === 'gpio' && activeTransport && activeTransport.connected) readGpio();   // état réel à l'ouverture
 }
 // Bascule Réglages <-> dernier onglet visité.
-let lastTab = 'azerty';
+let lastTab = 'mouse';
 function toggleCfg() {
   const cur = document.querySelector('.tab.active');
   if (cur) { lastTab = cur.dataset.tab; switchTab('cfg'); return; }
@@ -691,8 +687,6 @@ function wireUI() {
 
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
 
-  $('#macroText').addEventListener('input', refreshMacroLen);
-  $('#btnMacroSend').addEventListener('click', sendMacro);
   $('#btnMacroSave').addEventListener('click', saveMacro);
 
   document.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => addStep(b.dataset.add)));
@@ -767,10 +761,8 @@ function init() {
   buildKeyboard('#kb-azerty', KB_AZERTY);
   buildKeyboard('#kb-num', KB_NUM);
   buildFn();
-  buildSeqRow();
   buildGpio();
   renderSteps();
-  refreshMacroLen();
   refreshMods();
   initMouse();
   initTextPass();

@@ -106,22 +106,65 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
   border-radius:var(--radius); display:flex; align-items:center; justify-content:center; text-align:center;
   color:var(--text-dim); font-size:13px; padding:10px; touch-action:none; user-select:none; margin-bottom:8px; }
 .trackpad.active { border-color:var(--accent); background:#12233d; color:var(--text); }
-.mbtns { display:flex; gap:6px; align-items:stretch; height:58px; }
+.mbtns { display:flex; gap:6px; align-items:stretch; height:58px; overflow-x:auto; scrollbar-width:none; }
+.mbtns::-webkit-scrollbar { display:none; }
 .mbtn { flex:1; display:flex; align-items:center; justify-content:center; font-size:15px; }
-.mbtn.arrow { flex:0 0 56px; font-size:20px; }
+/* Proportions logiques : G/D = boutons principaux (flex:1, grands) ;
+   Milieu = secondaire (plus petit) ; molette ▲/▼ = petites. */
+.mbtn.arrow { flex:0 0 44px; font-size:18px; }
+.mbtn.mid { flex:0 0 auto; padding:0 14px; }
 .mbtn.gear { flex:0 0 52px; font-size:18px; }
+.mbtn.text { flex:0 0 52px; font-size:18px; background:var(--accent-2); border-color:var(--accent); }
+.mbtn.text:hover { background:var(--accent); }
 .mbtn.held { background:var(--armed); border-color:var(--armed); color:#fff; }
+
+/* Téléphone PORTRAIT : tous les boutons visibles sans débordement.
+   Grille déterministe en 2 lignes : G/D (grands) en haut, ⌨️/▲/Milieu/▼/⚙️ en bas.
+   La grille remplit la largeur → jamais de scroll horizontal. */
+body.is-phone.portrait .mbtns {
+  display:grid; height:auto; overflow:visible; gap:6px;
+  grid-template-columns:repeat(10,1fr);
+  grid-template-areas:
+    "g g g g g d d d d d"
+    "t t w w m m x x s s";
+}
+body.is-phone.portrait .mbtns .mbtn { height:52px; }
+body.is-phone.portrait .mbtns [data-mb="left"]   { grid-area:g; }
+body.is-phone.portrait .mbtns [data-mb="right"]  { grid-area:d; }
+body.is-phone.portrait .mbtns #btnTextInput      { grid-area:t; }
+body.is-phone.portrait .mbtns [data-mw="3"]      { grid-area:w; }
+body.is-phone.portrait .mbtns [data-mb="middle"] { grid-area:m; }
+body.is-phone.portrait .mbtns [data-mw="-3"]     { grid-area:x; }
+body.is-phone.portrait .mbtns #btnMouseSettings  { grid-area:s; }
 
 /* ---- Popup ---- */
 .popup { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:60; display:flex;
   align-items:center; justify-content:center; padding:20px; }
+/* Variante « top » : ancre la fenêtre en haut pour que le clavier du smartphone
+   (qui remonte le bas de l'écran) ne la recouvre pas. */
+.popup.top { align-items:flex-start; padding-top:12px; }
 .popup-inner { background:var(--bg-elev); border:1px solid var(--border); border-radius:14px;
   padding:16px; width:min(420px,92vw); box-shadow:0 10px 40px rgba(0,0,0,.5); }
+.textinput-inner textarea { margin-bottom:0; }
+
+/* Smartphone : la fenêtre de saisie passe en PLEIN ÉCRAN.
+   - occupe tout le viewport (100dvh, coins carrés) ;
+   - la barre d'actions (Envoyer / Envoi direct / Effacer) est remontée JUSTE
+     sous l'en-tête → toujours visible, jamais recouverte par le clavier tactile
+     qui remonte le bas de l'écran ;
+   - la zone de texte prend toute la hauteur restante. */
+body.is-phone #textInput { padding:0; align-items:stretch; justify-content:stretch; }
+body.is-phone #textInput .textinput-inner {
+  width:100%; max-width:none; height:100dvh; border:none; border-radius:0;
+  box-shadow:none; display:flex; flex-direction:column; gap:10px; }
+body.is-phone #textInput .popup-head { margin-bottom:0; }
+body.is-phone #textInput .textrow { margin-top:0; }
+body.is-phone #textInput textarea { order:1; flex:1; min-height:0; resize:none; font-size:16px; }
 .popup-head { display:flex; align-items:center; justify-content:space-between; font-weight:700; margin-bottom:14px; }
 .sens { display:flex; align-items:center; gap:10px; color:var(--text); font-size:14px; margin-bottom:8px; }
 .sens input[type=range] { flex:1; }
 
-/* ---- Texte / Macro ---- */
+/* ---- Texte (saisie) ---- */
 textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border);
   border-radius:var(--radius); padding:10px; font-size:16px; font-family:inherit; resize:vertical; }
 .live { display:inline-flex; align-items:center; gap:8px; color:var(--text-dim); font-size:14px; }
@@ -129,8 +172,11 @@ textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid
 .textrow .live { flex:1; justify-content:center; }
 .row { display:flex; align-items:center; gap:8px; margin-top:10px; } .row.wrap { flex-wrap:wrap; }
 .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+/* .chip : aussi réutilisé par les voyants GPIO / lien (.chip.led) */
 .chip { background:var(--bg-key); border:1px solid var(--border); border-radius:999px; padding:5px 10px;
   font-size:12px; cursor:pointer; max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Macro en bas de Fn/Média : séparateur discret au-dessus */
+#macroBox { border-top:1px solid var(--border); padding-top:12px; }
 
 /* ---- Séquences ---- */
 .steps { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }

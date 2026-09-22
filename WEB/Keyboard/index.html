@@ -39,73 +39,48 @@
 
   <!-- ===================== Onglets ===================== -->
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="azerty"><span class="ti">⌨️</span><span class="tl">AZERTY</span></button>
+    <button class="tab active" data-tab="mouse"><span class="ti">🖱️</span><span class="tl">Souris</span></button>
+    <button class="tab" data-tab="azerty"><span class="ti">⌨️</span><span class="tl">AZERTY</span></button>
     <button class="tab" data-tab="num"><span class="ti">🔢</span><span class="tl">Num</span></button>
     <button class="tab" data-tab="fn"><span class="ti">🎛️</span><span class="tl">Fn/Média</span></button>
-    <button class="tab" data-tab="mouse"><span class="ti">🖱️</span><span class="tl">Souris</span></button>
-    <button class="tab" data-tab="text"><span class="ti">✍️</span><span class="tl">Texte</span></button>
-    <button class="tab" data-tab="macro"><span class="ti">📋</span><span class="tl">Macro</span></button>
-    <button class="tab" data-tab="seq"><span class="ti">⏱️</span><span class="tl">Séq.</span></button>
     <button class="tab" data-tab="gpio"><span class="ti">🔌</span><span class="tl">GPIO</span></button>
   </nav>
 
   <!-- ===================== Contenu ===================== -->
   <main class="content">
 
-    <section id="tab-azerty" class="tabpage kbpage active"><div id="kb-azerty" class="keyboard"></div></section>
+    <section id="tab-azerty" class="tabpage kbpage"><div id="kb-azerty" class="keyboard"></div></section>
     <section id="tab-num" class="tabpage kbpage"><div id="kb-num" class="keyboard"></div></section>
-    <section id="tab-fn" class="tabpage scrollpage"><div id="fnpad"></div></section>
+    <section id="tab-fn" class="tabpage scrollpage">
+      <div id="fnpad"></div>
+      <!-- Séquences (création de macro) — déplacé en bas de Fn/Média.
+           Les séquences prédéfinies sont retirées (équivalentes aux Raccourcis ci-dessus). -->
+      <div class="fngroup" id="seqBox">
+        <h3>Séquence (création de macro)</h3>
+        <div id="stepList" class="steps"></div>
+        <div class="row wrap">
+          <button class="btn ghost" data-add="tap">+ Frappe</button>
+          <button class="btn ghost" data-add="wait">+ Attente</button>
+          <button class="btn ghost" data-add="rep">+ Répétition</button>
+          <div class="spacer"></div>
+          <button id="btnSeqPreset" class="btn ghost">Préréglage démo</button>
+          <button id="btnSeqStop" class="btn danger">Stop</button>
+          <button id="btnSeqRun" class="btn primary">Lancer</button>
+        </div>
+      </div>
+    </section>
 
     <!-- Souris : surface maximale -->
-    <section id="tab-mouse" class="tabpage mousepage">
+    <section id="tab-mouse" class="tabpage mousepage active">
       <div id="trackpad" class="trackpad"><span>Zone tactile — glissez pour déplacer le curseur, appui bref = clic gauche</span></div>
       <div class="mbtns">
+        <button id="btnTextInput" class="btn mbtn text" title="Saisie clavier smartphone">⌨️</button>
         <button class="btn mbtn" data-mb="left">Clic gauche</button>
         <button class="btn mbtn arrow" data-mw="3" title="Molette haut">▲</button>
-        <button class="btn mbtn" data-mb="middle">Milieu</button>
+        <button class="btn mbtn mid" data-mb="middle">Milieu</button>
         <button class="btn mbtn arrow" data-mw="-3" title="Molette bas">▼</button>
         <button class="btn mbtn" data-mb="right">Clic droit</button>
         <button id="btnMouseSettings" class="btn mbtn gear" title="Paramètres">⚙️</button>
-      </div>
-    </section>
-
-    <!-- Saisie texte au clavier physique / OS -->
-    <section id="tab-text" class="tabpage scrollpage">
-      <textarea id="passText" rows="5" placeholder="Écris ici avec le clavier du téléphone…" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
-      <div class="row textrow">
-        <button id="btnPassSend" class="btn primary">Envoyer</button>
-        <label class="live"><input type="checkbox" id="liveToggle" checked> Envoi en direct</label>
-        <button id="btnPassClear" class="btn ghost">Effacer</button>
-      </div>
-    </section>
-
-    <!-- Macro -->
-    <section id="tab-macro" class="tabpage scrollpage">
-      <textarea id="macroText" rows="5" placeholder="café à 5 € — l'été"></textarea>
-      <div class="row">
-        <span id="macroLen" class="hint">0 octet</span>
-        <div class="spacer"></div>
-        <button id="btnMacroSave" class="btn ghost">Mémoriser</button>
-        <button id="btnMacroSend" class="btn primary">Envoyer</button>
-      </div>
-      <div id="macroList" class="chips"></div>
-    </section>
-
-    <!-- Séquences -->
-    <section id="tab-seq" class="tabpage scrollpage">
-      <div id="stepList" class="steps"></div>
-      <div class="row wrap">
-        <button class="btn ghost" data-add="tap">+ Frappe</button>
-        <button class="btn ghost" data-add="wait">+ Attente</button>
-        <button class="btn ghost" data-add="rep">+ Répétition</button>
-        <div class="spacer"></div>
-        <button id="btnSeqPreset" class="btn ghost">Préréglage démo</button>
-        <button id="btnSeqStop" class="btn danger">Stop</button>
-        <button id="btnSeqRun" class="btn primary">Lancer</button>
-      </div>
-      <div class="predef">
-        <div class="hint">Séquences prédéfinies :</div>
-        <div id="seqrow" class="cluster"></div>
       </div>
     </section>
 
@@ -135,7 +110,7 @@
 
       <div class="cfgblock">
         <h3>Fonctionnalités</h3>
-        <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Texte, Macro, Séq.</em></label>
+        <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + saisie Texte</em></label>
         <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
         <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>le port USB CDC bascule en mode protocole JSON (au lieu de la console de debug)</em></label>
         <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
@@ -174,6 +149,21 @@
       </div>
     </section>
   </main>
+</div>
+
+<!-- Popup saisie texte (clavier du smartphone) — fusionné avec l'onglet Souris -->
+<div id="textInput" class="popup top hidden">
+  <div class="popup-inner textinput-inner">
+    <div class="popup-head">⌨️ Saisie clavier <button id="btnTextClose" class="btn ghost icon">✕</button></div>
+    <textarea id="passText" rows="4" placeholder="Écris ici avec le clavier du téléphone…" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="row textrow">
+      <button id="btnPassSend" class="btn primary">Envoyer</button>
+      <label class="live"><input type="checkbox" id="liveToggle" checked> Envoi en direct</label>
+      <button id="btnMacroSave" class="btn ghost icon" title="Mémoriser ce texte (Texte / macro rapide)">💾</button>
+      <button id="btnPassClear" class="btn ghost">Effacer</button>
+    </div>
+    <div id="macroList" class="chips"></div>
+  </div>
 </div>
 
 <!-- Popup paramètres souris -->
