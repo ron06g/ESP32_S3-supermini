@@ -11,12 +11,12 @@ paysage) qui lui envoie ce qu'il faut taper. Trois canaux de commande possibles 
    │  (Chrome / │   Wi-Fi (WS)  ─── ► │  ESP32-S3    │ ───────────► │   Cible    │
    │   Android) │ ─────────────── ╱   │  (firmware)  │  frappes     │ PC / TV    │
    └────────────┘   port COM     ╱    └──────┬───────┘              └────────────┘
-      WEB/Keyboard                    S3/hid_firmware │ BLE ↔ BLE
-                                                      ▼
-                                              ┌──────────────┐   USB HID    ┌────────────┐
-                                              │  ESP32-S3    │ ───────────► │  2e cible  │
-                                              │  (esclave)   │  frappes     │            │
-                                              └──────────────┘              └────────────┘
+      WEB/Keyboard              maître (id 0) = injecteur │ BLE ↔ BLE (étoile, id 1..3)
+                                                          ▼
+                                              ┌──────────────┐   GPIO déportés
+                                              │  ESP32-S3    │   (lecture / écriture
+                                              │ esclave id 1 │    par `id`)
+                                              └──────────────┘   … jusqu'à 3 esclaves
 ```
 
 > **Statut : mock, sans aucune sécurité** (ni auth du site, ni appairage chiffré).
@@ -34,8 +34,9 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 - **Transport Wi-Fi** : SoftAP `S3-KBD` + portail captif + app web embarquée +
   **WebSocket** (`ws://192.168.4.1:81/`). Rejoue le même protocole JSON.
 - **Transport port COM** : l'unique CDC USB bascule en mode protocole (flag `serial`).
-- **Appairage maître/esclave** (BLE ↔ BLE) : le maître transfère toutes ses sorties
-  à un second module identique ; désappairage physique par **5 appuis sur BOOT**.
+- **Appairage en étoile** (BLE ↔ BLE, jusqu'à 3 esclaves) : le maître injecte le HID
+  localement (id 0) et **route les GPIO par `id`** vers l'esclave désigné ; désappairage
+  physique par **5 appuis sur BOOT**.
 - **Panneau GPIO** pilotable (sorties 4–7, entrées 8–11) + **LED RGB d'état**.
 - **Paramètres persistants** en NVS (`cfg`), pilotables depuis l'app (panneau Réglages).
 - **Optimisation conso/chaleur** : CPU à 160 MHz, puissance TX radios réduite en
@@ -81,7 +82,7 @@ Le **GATT** est le contrat ; le Wi-Fi et le port COM rejouent le **même JSON**.
 |---|---|---|
 | Service HID-Bridge | `9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001` | — |
 | CMD | `9f1d0001-5b8e-4a4a-9c2a-2b7f3e6a1001` | Write / Write NR |
-| STATUS | `9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001` | Notify (`ready` / `busy` / `err:…`) |
+| STATUS | `9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001` | Notify (frames JSON `{"id":…}`) |
 
 Commandes (JSON UTF-8, champ `t`) :
 
@@ -92,13 +93,15 @@ Commandes (JSON UTF-8, champ `t`) :
 | `key`  | touche nommée / média (`tap`/`down`/`up`) | `{"t":"key","c":"Enter","a":"tap"}` |
 | `seq`  | séquence prédéfinie, perso (`s[]`) ou `stop` | `{"t":"seq","n":"alt_tab"}` |
 | `mouse`| déplacement / molette / bouton | `{"t":"mouse","dx":10,"dy":-4}` |
-| `ping` | test de liaison | `{"t":"ping","n":12}` → `pong:12` |
+| `ping` | test de liaison | `{"t":"ping","n":12}` → `{"id":0,"ev":"pong","n":12}` |
 | `cfg`  | lire/écrire les flags persistants (`set` redémarre) | `{"t":"cfg","a":"get"}` |
-| `pair` | appairage BLE ↔ BLE (`scan`/`bind`/`slave`/`unbind`/`reset`) | `{"t":"pair","a":"scan"}` |
-| `gpio` | sortie / lecture d'une broche | `{"t":"gpio","p":"4","a":"set"}` |
+| `pair` | appairage en étoile (`scan`/`bind`/`slave`/`unbind`/`reset`) | `{"t":"pair","a":"scan"}` |
+| `gpio` | sortie / lecture d'une broche (routable par `id`) | `{"t":"gpio","p":"4","a":"set","id":1}` |
 
-Masque modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
-Détail complet des commandes et réponses : [`S3/hid_firmware/README.md`](S3/hid_firmware/README.md).
+Masque modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr. Champ **`id`**
+optionnel (0 = maître/local par défaut, 1..3 = esclave) : le maître route la commande.
+Le **STATUS est en JSON** (`{"id":n,"st|err|ev":…}`). Détail complet et réponses :
+[`S3/hid_firmware/README.md`](S3/hid_firmware/README.md).
 
 ## Transports & rôles
 
@@ -108,10 +111,12 @@ Détail complet des commandes et réponses : [`S3/hid_firmware/README.md`](S3/hi
   le paramètre d'URL `D` (base64url) est présent, sinon le BLE.
 - **Port COM** — le CDC USB unique parle le protocole si le flag `serial` est actif
   (sinon il reste la console de debug). Pas de 2ᵉ CDC (budget d'endpoints du S3).
-- **Maître / esclave** — deux modules identiques peuvent s'appairer. Le **maître**
-  garde BLE + Wi-Fi pour le téléphone et **transfère tout** (sauf `cfg`/`pair`) à
-  l'**esclave** via BLE ; l'esclave exécute localement HID + GPIO + COM.
-  **5 appuis sur BOOT** (< 3 s) = désappairage physique.
+- **Étoile maître / esclaves** — un maître peut s'appairer avec jusqu'à **3** esclaves.
+  Le **maître (id 0)** injecte le HID localement, garde BLE + Wi-Fi pour le téléphone et
+  **route les commandes par `id`** vers ses esclaves ; un **esclave** ne fait que des
+  **GPIO** (pas de Wi-Fi, BLE réservé à son maître). Total connexions BLE ≤ 3 → piloter le
+  maître par COM/Wi-Fi. **5 appuis sur BOOT** (< 3 s) sur le maître = désappairage de toute
+  l'étoile.
 
 ## Démarrage rapide
 

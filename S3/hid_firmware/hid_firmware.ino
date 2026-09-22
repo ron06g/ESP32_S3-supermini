@@ -68,7 +68,7 @@ static USBCDC Console(0);
 // ---------------------------------------------------------------------------
 //  Reglages
 // ---------------------------------------------------------------------------
-#define STATUS_MAX 200                              // taille max d'une frame STATUS (cfg:{...})
+#define STATUS_MAX 384                              // taille max d'une frame STATUS JSON (cfg + slaves[])
 static const uint16_t KBD_VID = 0x303A;             // Espressif (dev)
 static const uint16_t KBD_PID = 0x8161;             // PID de dev, stable
 static const char*    KBD_PRODUCT = "S3-KBD (mock)";
@@ -89,7 +89,8 @@ static const uint32_t BOOT_RESET_WIN_MS = 3000;
 // --- Declarations avancees partagees par les modules (.h) ---
 static void enqueueCommand(const uint8_t* data, size_t len);
 static void releaseAll();
-static void notifyStatus(const char* s);
+static void notifyStatus(const char* s);   // adaptateur : texte legacy OU JSON -> diffusion
+static void statusRaw(const char* s);       // diffusion brute d'une frame deja construite (JSON)
 static void rebootWithStatus(const char* s);
 
 #include "config.h"                    // parametres NVS (g_cfg)
@@ -122,6 +123,7 @@ BLECharacteristic* g_statusChar = nullptr;
 BLEServer*         g_server     = nullptr;
 static char        g_bleMac[18] = "";
 
+uint8_t g_myId = 0;                  // id de CETTE carte : 0 (maitre/standard) ou selfId (esclave)
 volatile bool g_connected = false;   // un client BLE (telephone, ou le maitre si esclave)
 static volatile uint16_t g_connHandle = BLE_HS_CONN_HANDLE_NONE;  // esclave : lien vers le maitre (RSSI LED)
 volatile bool g_stop      = false;   // demande d'arret de sequence
@@ -134,7 +136,7 @@ uint8_t g_heldKeys[6] = {0};         // touches non-modif maintenues (down/up)
 // Etat LED « de fond » selon le role et les connexions.
 static LedMode ledBaseMode() {
   if (g_cfg.role == ROLE_SLAVE)  return g_connected ? LST_SLAVE_LINKED : LST_SLAVE_WAIT;
-  if (g_cfg.role == ROLE_MASTER) return g_linkUp    ? LST_CONNECTED    : LST_IDLE;
+  if (g_cfg.role == ROLE_MASTER) return linkAnyUp() ? LST_CONNECTED    : LST_IDLE;
   return g_connected ? LST_CONNECTED : LST_IDLE;
 }
 
@@ -185,13 +187,10 @@ static void releaseAll() {
 // ===========================================================================
 //  STATUS (socle §5 / spec S3 §4) — diffuse vers BLE, Wi-Fi, COM, console
 // ===========================================================================
-static void notifyStatus(const char* s) {
-  // Reflet LED (point central) : busy/ready pilotent le fond, err:* fait une
-  // impulsion orange transitoire sans figer la LED.
-  if      (!strncmp(s, "err", 3)) ledPulse(C_ORANGE, 160);
-  else if (!strcmp(s, "busy"))    ledSetMode(LST_BUSY);
-  else if (!strcmp(s, "ready"))   ledSetMode(ledBaseMode());
-
+// Diffusion BRUTE : `s` est deja la frame finale (JSON). Aucun reflet LED ni
+// interpretation -> sert a relayer VERBATIM les STATUS d'un esclave (deja
+// tagues de son id) et est appelee par l'adaptateur notifyStatus.
+static void statusRaw(const char* s) {
   if (g_statusChar) {
     g_statusChar->setValue((uint8_t*)s, strlen(s));
     if (g_connected) g_statusChar->notify();   // garde g_connected : specifique BLE
@@ -199,6 +198,39 @@ static void notifyStatus(const char* s) {
   wifiQueueStatus(s);                          // diffusion Wi-Fi (drainee par la tache reseau)
   comQueueStatus(s);                           // diffusion port COM (drainee par la tache com)
   DBG("[STATUS] %s\n", s);
+}
+
+// Adaptateur : accepte les chaines LEGACY (ready/busy/err:*/pong:*/gpio:*/
+// pair:ok/cfg:saved) encore produites par le dispatch, gpio_panel, com_port…
+// et les convertit en JSON {"id":g_myId,...}. Une frame commencant par '{' est
+// deja du JSON (relais esclave / helper) et passe telle quelle. Reflete la LED.
+static void notifyStatus(const char* s) {
+  if (!s) return;
+  if (s[0] == '{') { statusRaw(s); return; }
+
+  if      (!strncmp(s, "err", 3)) ledPulse(C_ORANGE, 160);
+  else if (!strcmp(s, "busy"))    ledSetMode(LST_BUSY);
+  else if (!strcmp(s, "ready"))   ledSetMode(ledBaseMode());
+
+  char out[STATUS_MAX];
+  if      (!strcmp(s, "ready") || !strcmp(s, "busy"))
+    snprintf(out, sizeof(out), "{\"id\":%u,\"st\":\"%s\"}", g_myId, s);
+  else if (!strncmp(s, "err:", 4))
+    snprintf(out, sizeof(out), "{\"id\":%u,\"err\":\"%s\"}", g_myId, s + 4);
+  else if (!strncmp(s, "pong:", 5))
+    snprintf(out, sizeof(out), "{\"id\":%u,\"ev\":\"pong\",\"n\":%s}", g_myId, s + 5);
+  else if (!strncmp(s, "gpio:", 5)) {
+    const char* body  = s + 5;
+    const char* colon = strrchr(body, ':');    // dernier ':' : le label peut valoir "BOOT"
+    if (colon) snprintf(out, sizeof(out), "{\"id\":%u,\"ev\":\"gpio\",\"p\":\"%.*s\",\"v\":%d}",
+                        g_myId, (int)(colon - body), body, atoi(colon + 1));
+    else       snprintf(out, sizeof(out), "{\"id\":%u,\"st\":\"%s\"}", g_myId, s);
+  }
+  else if (!strcmp(s, "pair:ok"))   snprintf(out, sizeof(out), "{\"id\":0,\"ev\":\"pair\",\"ok\":true}");
+  else if (!strcmp(s, "cfg:saved")) snprintf(out, sizeof(out), "{\"id\":0,\"ev\":\"cfg\",\"saved\":true}");
+  else                              snprintf(out, sizeof(out), "{\"id\":%u,\"st\":\"%s\"}", g_myId, s);
+
+  statusRaw(out);
 }
 
 // Emet un statut, laisse le temps aux transports de l'ecouler, redemarre.
@@ -473,6 +505,39 @@ static bool jsonFlag(JsonVariant v, bool cur) {
   return cur;
 }
 
+// Reponse a {"t":"cfg","a":"get"} : config + table de routage des esclaves
+// (maitre), avec l'etat de lien courant (up/rssi) pris dans le runtime g_link[].
+static void statusCfg() {
+  JsonDocument d;
+  d["id"]     = 0;
+  d["ev"]     = "cfg";
+  d["hid_kb"] = g_cfg.hidKb ? 1 : 0;
+  d["hid_ms"] = g_cfg.hidMs ? 1 : 0;
+  d["serial"] = g_cfg.serial ? 1 : 0;
+  d["gpio"]   = g_cfg.gpio ? 1 : 0;
+  d["pair"]   = g_cfg.pair ? 1 : 0;
+  d["role"]   = g_cfg.role;
+  d["mac"]    = g_bleMac;
+  d["self"]   = g_cfg.selfId;
+  char peer[18] = "";
+  if (cfgPeerValid()) cfgMacStr(g_cfg.peer, peer);   // esclave : MAC de son maitre
+  d["peer"]   = peer;
+  JsonArray sl = d["slaves"].to<JsonArray>();
+  for (int i = 0; i < MAX_SLAVES; i++) {
+    if (!g_cfg.slaves[i].id) continue;
+    JsonObject o = sl.add<JsonObject>();
+    uint8_t id = g_cfg.slaves[i].id;
+    o["id"] = id;
+    char m[18]; cfgMacStr(g_cfg.slaves[i].mac, m);
+    o["mac"]  = m;
+    o["up"]   = (g_cfg.role == ROLE_MASTER && g_link[id - 1].up) ? 1 : 0;
+    o["rssi"] = (g_cfg.role == ROLE_MASTER) ? g_link[id - 1].rssi : 0;
+  }
+  char out[STATUS_MAX];
+  serializeJson(d, out, sizeof(out));
+  statusRaw(out);
+}
+
 static void handleCfg(JsonDocument& doc) {
   const char* a = doc["a"] | "get";
   if (!strcmp(a, "set")) {
@@ -486,31 +551,30 @@ static void handleCfg(JsonDocument& doc) {
     rebootWithStatus("cfg:saved");
     return;
   }
-  char js[STATUS_MAX - 4];
-  cfgToJson(js, sizeof(js), g_bleMac, g_linkUp, g_linkRssi);
-  char out[STATUS_MAX];
-  snprintf(out, sizeof(out), "cfg:%s", js);
-  notifyStatus(out);
+  statusCfg();
 }
 
 static void handlePair(JsonDocument& doc) {
   const char* a = doc["a"] | "";
   if (!strcmp(a, "scan"))   { linkScan(); return; }
   if (!strcmp(a, "bind"))   { linkBind(doc["mac"] | ""); return; }
-  if (!strcmp(a, "unbind")) { linkUnbind(); return; }
-  if (!strcmp(a, "slave")) {                       // ordre recu du futur maitre
+  if (!strcmp(a, "unbind")) { linkUnbind((uint8_t)(doc["id"] | 0)); return; }   // id==0 = tous
+  if (!strcmp(a, "slave")) {                       // ordre recu du futur maitre (+ id attribue)
     uint8_t m[6];
     if (!g_cfg.pair || g_cfg.role == ROLE_MASTER || !cfgParseMac(doc["mac"] | "", m)) { notifyStatus("err:pair"); return; }
     memcpy(g_cfg.peer, m, 6);
-    g_cfg.role = ROLE_SLAVE;
+    g_cfg.role   = ROLE_SLAVE;
+    g_cfg.selfId = (uint8_t)(doc["id"] | 1);       // id sous lequel le maitre me verra
     cfgSave();
-    DBG("[PAIR] esclave de %s, redemarrage\n", (const char*)(doc["mac"] | ""));
+    DBG("[PAIR] esclave id=%u de %s, redemarrage\n", g_cfg.selfId, (const char*)(doc["mac"] | ""));
     rebootWithStatus("pair:ok");
     return;
   }
   if (!strcmp(a, "reset")) {                       // retour au mode standard (aussi via COM)
-    g_cfg.role = ROLE_STD;
+    g_cfg.role   = ROLE_STD;
+    g_cfg.selfId = 0;
     memset(g_cfg.peer, 0, 6);
+    memset(g_cfg.slaves, 0, sizeof(g_cfg.slaves));
     cfgSave();
     DBGLN("[PAIR] reset -> mode standard, redemarrage");
     rebootWithStatus("pair:ok");
@@ -529,16 +593,24 @@ static void processCommand(const char* json) {
 
   const char* t = doc["t"] | "";
 
-  // --- Toujours locales : cfg / pair ---
+  // --- Toujours locales, quel que soit l'id : cfg / pair ---
   if (!strcmp(t, "cfg"))  { handleCfg(doc);  return; }
   if (!strcmp(t, "pair")) { handlePair(doc); return; }
 
-  // --- MAITRE : tout le reste est transfere tel quel a l'esclave ---
-  if (g_cfg.role == ROLE_MASTER) {
-    if (!g_linkUp) { notifyStatus("err:nolink"); return; }
-    linkForward(json, !strcmp(t, "txt") || !strcmp(t, "seq"));
+  // --- Routage par id : 0 = cette carte (maitre/standard/esclave local),
+  //     1..MAX_SLAVES = esclave route par le maitre. id absent => 0. ---
+  int id = doc["id"] | 0;
+  if (g_cfg.role == ROLE_MASTER && id != 0) {
+    if (id < 1 || id > MAX_SLAVES || slaveIndexById((uint8_t)id) < 0) { notifyStatus("err:id"); return; }
+    if (!linkUp((uint8_t)id)) {
+      char e[40]; snprintf(e, sizeof(e), "{\"id\":%d,\"err\":\"nolink\"}", id);
+      statusRaw(e);
+      return;
+    }
+    linkForward((uint8_t)id, json, !strcmp(t, "txt") || !strcmp(t, "seq"));
     return;
   }
+  // id == 0 (ou standard / esclave) : execution locale ci-dessous.
 
   if (!strcmp(t, "ping")) {
     char s[24]; snprintf(s, sizeof(s), "pong:%ld", (long)(doc["n"] | 0L));
@@ -611,9 +683,9 @@ static void enqueueCommand(const uint8_t* data, size_t len) {
     while (xQueueReceive(g_cmdQueue, &p, 0) == pdTRUE) free(p);
     releaseAll();
     if (g_stopMux) xSemaphoreGive(g_stopMux);
-    if (g_cfg.role == ROLE_MASTER) {           // STOP transfere en priorite a l'esclave
-      linkPurgeTx();
-      linkForward("{\"t\":\"seq\",\"n\":\"stop\"}", true);
+    if (g_cfg.role == ROLE_MASTER) {           // STOP diffuse en priorite a TOUS les esclaves
+      linkPurgeAllTx();
+      linkBroadcastStop();
     }
     notifyStatus("ready");
     return;
@@ -795,7 +867,7 @@ static bool bleBegin() {
   g_statusChar = svc->createCharacteristic(
       STATUS_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   g_statusChar->addDescriptor(new BLE2902());
-  g_statusChar->setValue("ready");
+  g_statusChar->setValue("{\"id\":0,\"st\":\"ready\"}");   // valeur initiale (frame JSON)
 
   svc->start();
 
@@ -833,6 +905,7 @@ void setup() {
 
   // --- Parametres persistants (AVANT l'USB : ils choisissent les interfaces) ---
   cfgLoad();
+  g_myId = (g_cfg.role == ROLE_SLAVE) ? g_cfg.selfId : 0;   // id de cette carte (tag des STATUS)
 
   // --- File + tache worker (avant l'USB, pour ne rien perdre) ---
   g_cmdQueue = xQueueCreate(CMD_QUEUE_LEN, sizeof(char*));
@@ -856,7 +929,9 @@ void setup() {
   bool bleOk = bleBegin();
 
   // --- GPIO (pas sur le maitre : les GPIO pilotes sont ceux de l'esclave) ---
-  if (g_cfg.gpio && g_cfg.role != ROLE_MASTER) gpioBegin();
+  // GPIO locaux : le maitre gere DESORMAIS ses propres GPIO (id 0), en plus de
+  // router les GPIO des esclaves. Actifs sur tous les roles si le flag est mis.
+  if (g_cfg.gpio) gpioBegin();
 
   // --- Transport Wi-Fi : jamais sur un esclave ---
   if (g_cfg.role != ROLE_SLAVE) wifiPortalBegin();

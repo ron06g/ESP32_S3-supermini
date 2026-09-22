@@ -86,12 +86,15 @@
 
     <!-- GPIO : sorties (boutons bascule) + entrées (voyants) -->
     <section id="tab-gpio" class="tabpage scrollpage">
+      <div class="row wrap" style="margin-bottom:6px">
+        <label>Carte : <select id="gpioTarget"></select></label>
+        <span class="hint">Lit/écrit les GPIO de la carte choisie : le <b>maître</b> (id 0) ou un <b>esclave</b>.</span>
+      </div>
       <div class="fngroup"><h3>Sorties (bascule)</h3><div id="gpioOut" class="cluster"></div></div>
       <div class="fngroup"><h3>Entrées (pull-up, actif bas)</h3><div id="gpioIn" class="cluster"></div></div>
       <div class="row">
         <button id="btnGpioRead" class="btn ghost">Relire tout</button>
-        <span class="hint">Nommage = sérigraphie S3 SuperMini (n° de GPIO). BOOT = bouton intégré, sans câblage.
-          Sur un <b>maître</b>, ce sont les broches de l'<b>esclave</b>.</span>
+        <span class="hint">Nommage = sérigraphie S3 SuperMini (n° de GPIO). BOOT = bouton intégré, sans câblage.</span>
       </div>
     </section>
 
@@ -123,29 +126,24 @@
       </div>
 
       <div id="pairBox" class="cfgblock">
-        <h3>Appairage BLE ↔ BLE</h3>
+        <h3>Appairage BLE ↔ BLE — étoile (jusqu'à 3 esclaves)</h3>
+        <div id="slaveList" class="scanlist hidden"></div>
         <div id="scanBox">
           <div class="row wrap">
-            <button id="btnScan" class="btn primary">Rechercher un module</button>
+            <button id="btnScan" class="btn primary">Ajouter un esclave (scan)</button>
             <span class="hint">Scan de 4 s. Le module cible doit être libre (non connecté à un téléphone).</span>
           </div>
           <div id="scanList" class="scanlist"></div>
         </div>
-        <div id="linkBox" class="hidden">
-          <div class="row wrap">
-            <span>Lien vers l'esclave :</span>
-            <span id="linkState" class="chip led">inconnu</span>
-            <span id="linkRssi" class="chip">RSSI –</span>
-            <div class="spacer"></div>
-            <button id="btnUnbind" class="btn danger">Désappairer</button>
-          </div>
-          <div class="hint">Toutes les sorties (clavier, souris, GPIO, ping) sont transférées à l'esclave. Lien coupé → <code>err:nolink</code>.</div>
-          <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) désappairent le module physiquement, même sans Wi-Fi ni accès web.</div>
-        </div>
         <div class="row wrap">
-          <button id="btnLinkTest" class="btn">Test liaison (20 pings)</button>
-          <span id="linkTestOut" class="hint">RTT complet web → module → (esclave) → web.</span>
+          <label>Test de liaison : <select id="linkTarget"></select></label>
+          <button id="btnLinkTest" class="btn">20 pings</button>
+          <span id="linkTestOut" class="hint">RTT web → module (→ esclave) → web.</span>
         </div>
+        <div class="hint">Le maître injecte clavier/souris localement (id 0) et route les GPIO par id vers l'esclave choisi.
+          Lien d'un esclave coupé → <code>{"err":"nolink"}</code>.</div>
+        <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) sur le maître désappairent toute l'étoile ;
+          sur un esclave, <code>{"t":"pair","a":"reset"}</code> par son port COM le libère.</div>
       </div>
     </section>
   </main>

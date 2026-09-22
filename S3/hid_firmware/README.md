@@ -115,39 +115,41 @@ redémarrage. Contrainte de plateforme : une page **HTTPS** ne pourrait pas pilo
 
 ## Paramètres, port COM, GPIO, appairage — évolution
 
-Tout est piloté par le **même protocole JSON** (BLE, WebSocket ou port COM) :
+Tout est piloté par le **même protocole JSON** (BLE, WebSocket ou port COM). Depuis
+l'étoile multi-esclaves, **le STATUS est en JSON** (`{"id":n,…}`, `id` 0 = maître,
+1..3 = esclave) et chaque commande accepte un `id` optionnel de **routage** (0 =
+maître/local par défaut) :
 
 | Commande | Effet | Réponse STATUS |
 |---|---|---|
-| `{"t":"ping","n":12}` | test de liaison (exécuté par le module final : l'esclave si maître) | `pong:12` |
-| `{"t":"cfg","a":"get"}` | lire la config | `cfg:{"hid_kb":1,"hid_ms":1,"serial":0,"gpio":1,"pair":1,"role":0,"mac":"…","peer":"","link":0,"rssi":0}` |
-| `{"t":"cfg","a":"set","hid_kb":true,"hid_ms":false,"serial":true,"gpio":true,"pair":true}` | sauver en NVS puis **redémarrer** (USB ré-énuméré) | `cfg:saved` |
-| `{"t":"pair","a":"scan"}` | scan BLE 4 s des modules annonçant le service HID-Bridge | `scan:<mac>:<rssi>:<nom>` ×N puis `scan:done` |
-| `{"t":"pair","a":"bind","mac":"aa:bb:cc:dd:ee:ff"}` | devenir **maître** de ce module (ordre `slave` envoyé, attente `pair:ok`) | `pair:ok` + reboot, sinon `err:pair` |
-| `{"t":"pair","a":"slave","mac":"<maître>"}` | (reçu du maître) devenir **esclave** | `pair:ok` + reboot |
-| `{"t":"pair","a":"unbind"}` | (maître) libérer l'esclave puis soi-même | `pair:ok` + reboot |
-| `{"t":"pair","a":"reset"}` | **retour au mode standard** — c'est la commande à envoyer sur le **port COM** d'un esclave orphelin | `pair:ok` + reboot |
-| **5 appuis sur le bouton BOOT** (< 3 s) | désappairage **physique** (aucun web/COM requis) : maître → `unbind`, esclave → `reset` | `pair:ok` + reboot |
-| `{"t":"gpio","p":"4","a":"set\|clr\|tgl\|read"}` / `{"t":"gpio","a":"read"}` | sortie / lecture (`read` sans `p` = tout) | `gpio:<label>:<0\|1>` (aussi spontané sur changement d'entrée) |
-| — | événements du lien (maître) | `link:up`, `link:down`, `link:rssi:-62` (toutes les 2 s) |
+| `{"t":"ping","n":12}` / `…,"id":1}` | test de liaison vers le maître / l'esclave 1 | `{"id":0,"ev":"pong","n":12}` |
+| `{"t":"cfg","a":"get"}` | lire la config + table des esclaves | `{"id":0,"ev":"cfg","hid_kb":1,…,"role":1,"mac":"…","self":0,"slaves":[{"id":1,"mac":"…","up":1,"rssi":-62}]}` |
+| `{"t":"cfg","a":"set","hid_kb":true,…,"gpio":true,"pair":true}` | sauver en NVS puis **redémarrer** | `{"id":0,"ev":"cfg","saved":true}` |
+| `{"t":"pair","a":"scan"}` | scan BLE 4 s des modules HID-Bridge | `{"id":0,"ev":"scan","mac":"…","rssi":-60,"name":"…"}` ×N puis `{"…,"done":true}` |
+| `{"t":"pair","a":"bind","mac":"aa:bb:…"}` | **ajouter** ce module comme esclave (id auto, plus petit libre 1..3) | `{"id":0,"ev":"pair","ok":true}` + reboot, sinon `err:pair`/`err:full` |
+| `{"t":"pair","a":"slave","mac":"<maître>","id":n}` | (reçu du maître) devenir **esclave** id `n` | `pair` ok + reboot |
+| `{"t":"pair","a":"unbind","id":n}` | (maître) libérer l'esclave `n` (`id`=0 ou absent = **tous**) | `pair` ok + reboot |
+| `{"t":"pair","a":"reset"}` | **retour au mode standard** — à envoyer sur le **port COM** d'un esclave orphelin | `pair` ok + reboot |
+| **5 appuis sur BOOT** (< 3 s) | désappairage physique : maître → toute l'étoile, esclave → `reset` | `pair` ok + reboot |
+| `{"t":"gpio","p":"4","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout) | `{"id":1,"ev":"gpio","p":"4","v":1}` (aussi spontané sur entrée) |
+| — | événements du lien (maître, par esclave) | `{"id":1,"ev":"link","up":true}`, `{"…,"up":false}`, `{"…,"rssi":-62}` (2 s) |
 
-Erreurs : `err:nolink` (maître sans esclave joignable — rien n'est frappé localement),
-`err:nohid` (interface HID désactivée), `err:gpio`, `err:pair`.
+Erreurs : `{"id":n,"err":"nolink"}` (esclave `n` injoignable), `err:id` (id inconnu),
+`err:full` (table pleine), `err:nohid`, `err:gpio`, `err:pair`. Frames STATUS ≤ **384 o**.
 
-**Désappairage physique** : **5 appuis sur le bouton BOOT** (GPIO0) en moins de 3 s ramènent
-le module en mode standard, quel que soit son rôle et même si Wi-Fi/BLE/GPIO sont coupés
-(tâche `bootResetTask` autonome). Chaque appui = impulsion LED violette ; un maître libère
-d'abord son esclave (`unbind`), un esclave fait `reset`.
+**Désappairage physique** : **5 appuis sur BOOT** (GPIO0) en moins de 3 s (tâche
+`bootResetTask` autonome, chaque appui = impulsion LED violette) — un maître désappaire
+**toute l'étoile**, un esclave fait `reset`.
 
 **Rôles** (persistants en NVS) :
 
-- **standard** : comportement d'origine (BLE + Wi-Fi + USB local) ;
-- **maître** : garde BLE + Wi-Fi pour le téléphone ; une tâche `link` reste client GATT de
-  l'esclave (reconnexion toutes les 3 s, RSSI toutes les 2 s) ; **tout** sauf `cfg`/`pair`
-  est **transféré tel quel** à l'esclave, ses STATUS sont relayés tels quels (RTT complet
-  avec `ping`). STOP est transféré hors-file ;
-- **esclave** : **pas de Wi-Fi**, BLE réservé au maître (whitelist + vérification de MAC),
-  HID clavier/souris + COM + GPIO exécutés localement. LED : ambre qui respire (sans
+- **standard** : BLE + Wi-Fi + USB local (id 0) ;
+- **maître** : injecte **localement** clavier/souris/COM + ses propres GPIO (id 0), garde
+  BLE + Wi-Fi pour le téléphone, et **route par `id`** vers ses esclaves (une tâche `linkN`
+  par esclave : reconnexion 3 s, RSSI 2 s ; tâche `relay` rediffuse leurs STATUS). STOP est
+  diffusé hors-file à tous les esclaves. Total connexions BLE ≤ 3 (piloter par COM/Wi-Fi) ;
+- **esclave** : **GPIO uniquement** (+ COM). Pas de Wi-Fi, BLE réservé à son maître
+  (whitelist + vérif MAC), se signale avec son `selfId`. LED : ambre qui respire (sans
   maître), vert doux (lié).
 
 **Port COM** : l'ESP32-S3 (USB-OTG FS, 6 endpoints) ne peut PAS exposer clavier + souris +
@@ -159,8 +161,8 @@ côté hôte convient). Le **numéro de série USB** dérive des flags (`S3KBD-K
 pour que Windows ré-énumère proprement chaque combinaison.
 
 **GPIO** : `gpio_panel.h`, table unique `GPIO_TABLE[]` — `BOOT` (GPIO0, bouton intégré),
-sorties `4 5 6 7`, entrées `8 9 10 11` (pull-up, **1 = actif = niveau bas**). Non scruté sur
-un maître (les GPIO commandés sont ceux de l'esclave).
+sorties `4 5 6 7`, entrées `8 9 10 11` (pull-up, **1 = actif = niveau bas**). Le **maître**
+scrute désormais **ses propres** GPIO (id 0) ; ceux d'un esclave s'adressent par `id`.
 
 ## Tester le lot seul (sans le site web)
 
@@ -175,10 +177,12 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
    - `{"t":"char","v":"c","m":1}` → **Ctrl+C**.
    - Séquence tempo (socle §5.3) : `{"t":"seq","s":[{"tap":"1"},{"wait":1000},{"tap":"2"},{"wait":1000},{"rep":3,"every":4000,"tap":"3"}]}`.
    - Arrêt : `{"t":"seq","n":"stop"}`.
-3. S'abonner à **STATUS** (`…-0002`) pour voir `ready` / `busy` / `err:…`.
-4. Nouveautés : `{"t":"ping","n":1}` → `pong:1` ; `{"t":"cfg","a":"get"}` → `cfg:{…}` ;
-   `{"t":"gpio","p":"4","a":"tgl"}` → `gpio:4:1`. Sur le **port COM** (PuTTY, une ligne
-   par commande) : `{"t":"pair","a":"reset"}` libère un esclave.
+3. S'abonner à **STATUS** (`…-0002`) : les frames sont du **JSON**, ex.
+   `{"id":0,"st":"ready"}`, `{"id":0,"st":"busy"}`, `{"id":0,"err":"unmapped"}`.
+4. Nouveautés : `{"t":"ping","n":1}` → `{"id":0,"ev":"pong","n":1}` ; `{"t":"cfg","a":"get"}`
+   → `{"id":0,"ev":"cfg",…}` ; `{"t":"gpio","p":"4","a":"tgl"}` → `{"id":0,"ev":"gpio","p":"4","v":1}`.
+   Routage étoile : ajouter `"id":1` pour viser l'esclave 1. Sur le **port COM** (PuTTY, une
+   ligne par commande) : `{"t":"pair","a":"reset"}` libère un esclave.
 
 ## Contrat GATT (rappel)
 
@@ -200,10 +204,12 @@ Format des commandes : **JSON UTF-8** (socle §5.2). La traduction AZERTY→HID 
 - **Bluedroid + USB** cohabitent mais sont gourmands en RAM ; en cas d'instabilité
   mémoire, basculer la pile BLE sur **NimBLE-Arduino** (plus légère, recommandée
   par le socle) est l'évolution naturelle.
-- Une seule connexion cliente à la fois (conforme au mock). Un module déjà connecté à un
+- **Total des connexions BLE simultanées ≤ 3** (`CONFIG_BT_NIMBLE_MAX_CONNECTIONS`) :
+  un maître à 3 esclaves n'a plus de connexion libre pour un téléphone → piloter le maître
+  par **COM ou Wi-Fi** (qui ne consomment pas de connexion BLE). Un module déjà connecté à un
   téléphone n'annonce plus : il n'apparaît pas dans un scan d'appairage.
-- Les frames STATUS font jusqu'à **200 octets** (`cfg:{…}`) : un MTU BLE ≥ 150 est requis
-  (Android/Chrome, Windows et nRF Connect négocient 517 ; log `[BLE] MTU=`).
+- Les frames STATUS font jusqu'à **384 octets** (le `cfg` embarque la table `slaves[]`) :
+  un MTU BLE élevé est requis (Android/Chrome, Windows et nRF Connect négocient 517 ; log `[BLE] MTU=`).
 - Majuscules accentuées et touches mortes exotiques hors couverture (spec S3 §6) :
   caractère absent de la table → ignoré + `err:unmapped`, jamais de frappe au hasard.
 

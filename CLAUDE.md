@@ -80,7 +80,7 @@ du protocole doit rester synchronisée entre `S3/hid_firmware/hid_firmware.ino` 
 **Second transport (Wi-Fi, résolution A).** À côté du BLE, le S3 expose un SoftAP
 `S3-KBD` + portail captif et sert l'app en HTTP ; les commandes passent par un
 **WebSocket** `ws://192.168.4.1:81/` où **1 frame texte = 1 JSON identique au BLE**,
-le statut revient en frames texte (`ready`/`busy`/`err:*`). L'app choisit le
+le statut revient en **frames JSON** (voir contrat STATUS ci-dessous). L'app choisit le
 transport au chargement : Wi-Fi si le paramètre d'URL `D` (base64url de
 `{"wifi":"192.168.4.1",…}`) est présent, sinon BLE. Firmware : `wifi_portal.h` +
 `web_assets.h` (app embarquée). Web : façade `bleTransport`/`wifiTransport` dans
@@ -91,34 +91,52 @@ USB) est partagé — les deux transports enfilent dans `g_cmdQueue`.
 |---|---|---|
 | Service HID-Bridge | `9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001` | — |
 | CMD | `9f1d0001-…-1001` | Write / Write NR |
-| STATUS | `9f1d0002-…-1001` | Notify (`ready` / `busy` / `err:…`) |
+| STATUS | `9f1d0002-…-1001` | Notify (frames JSON `{"id":…}`) |
 
 Commandes JSON UTF-8 sur CMD, champ `t` : `char` (un caractère, mode direct),
 `txt` (chaîne / macro), `key` (touche nommée / média, action `tap`/`down`/`up`),
 `seq` (séquence prédéfinie `n`, personnalisée `s[]`, ou `stop`), `mouse`
-(déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong:n`),
-`cfg` (`a`=`get`/`set` : flags persistants, réponse `cfg:{…}`, `set` redémarre),
+(déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong`),
+`cfg` (`a`=`get`/`set` : flags persistants, réponse `ev:cfg`, `set` redémarre),
 `pair` (`a`=`scan`/`bind`/`slave`/`unbind`/`reset` : appairage BLE↔BLE), `gpio`
-(`p` label, `a`=`set`/`clr`/`tgl`/`read` → `gpio:<label>:<v>`). Masque
-modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr. Les frames STATUS
-font jusqu'à **200 octets** (`STATUS_MAX`) ; les préfixes `cfg:`/`scan:`/`pair:`/
-`link:`/`gpio:`/`pong:` sont des événements, `ready`/`busy`/`err:*` l'état.
+(`p` label, `a`=`set`/`clr`/`tgl`/`read`). Masque
+modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
+
+**Champ `id` (routage étoile).** Chaque commande accepte un `id` optionnel
+(**0 = maître/local par défaut**, 1..3 = esclave). Sur un maître, une commande
+`id≠0` est **routée** vers l'esclave correspondant ; `cfg`/`pair` restent toujours
+locaux (l'`id` d'un `pair` désigne l'esclave à désappairer, pas une cible de routage).
+
+**Contrat STATUS (JSON).** Chaque frame est un objet portant `id` (0 = émetteur
+local/maître, 1..3 = esclave qui stampe son `selfId` ; le maître **relaie
+verbatim**). Discriminants : `{"id":n,"st":"ready|busy"}` (état ; seul l'id 0 est
+l'« état courant »), `{"id":n,"err":"<code>"}`, ou événements
+`{"id":n,"ev":"cfg|scan|pair|link|gpio|pong",…}` — ex. `{"id":1,"ev":"gpio","p":"4","v":1}`,
+`{"id":2,"ev":"link","up":true}`. Frames jusqu'à **384 octets** (`STATUS_MAX`, le
+`cfg` embarque la table `slaves[]`). Côté firmware, `notifyStatus()` est un
+**adaptateur** qui convertit encore les chaînes legacy (`ready`/`err:*`/`gpio:*`…)
+en JSON `{"id":g_myId,…}` et laisse passer une frame déjà JSON (`statusRaw`).
 
 **Troisième transport (port COM) et rôles maître/esclave.** L'ESP32-S3 (USB-OTG
 FS, 6 endpoints) ne peut pas héberger clavier + souris + **deux** CDC (composite
 refusé, Windows code 10). Le port COM **réutilise donc l'unique CDC** (`com_port.h`,
 interface 0) : si le flag `serial` est actif, ce CDC parle le protocole (1 ligne =
 1 commande, STATUS en lignes, logs de debug tus) ; sinon il reste la console de
-debug. Deux modules identiques peuvent s'appairer
-(`ble_link.h`) : le **maître** garde BLE + Wi-Fi pour le téléphone et **transfère
-tel quel** tout sauf `cfg`/`pair` à l'**esclave** (client GATT, même service
-HID-Bridge), en relayant ses STATUS (`link:up`/`link:down`/`link:rssi:`) ; lien
-coupé → `err:nolink`, rien n'est frappé localement. L'esclave n'a **pas de
-Wi-Fi**, un BLE réservé au maître (whitelist + vérif MAC) et exécute localement
-HID + GPIO + COM ; `{"t":"pair","a":"reset"}` sur son COM le libère. **5 appuis
-sur BOOT** (GPIO0, < 3 s, tous rôles) = désappairage physique (maître → `unbind`,
-esclave → `reset`). Paramètres
-et rôle sont en NVS (`config.h`, `Preferences`, namespace `s3kbd`).
+debug. Un maître peut s'appairer en **étoile** avec jusqu'à **`MAX_SLAVES` = 3**
+esclaves (`ble_link.h`). **Le maître (id 0) injecte le HID/GPIO/COM LOCALEMENT** et
+**route par `id`** vers l'esclave désigné (une tâche `linkN` + client GATT par
+esclave, file de relais partagée) ; il garde BLE + Wi-Fi pour le téléphone. Un
+esclave (id 1..3) **ne fait que des GPIO** : pas de Wi-Fi, un BLE réservé à son
+maître (whitelist + vérif MAC), exécute localement GPIO + COM et se signale
+toujours avec son `selfId`. Lien d'un esclave coupé → `{"id":n,"err":"nolink"}`.
+**Plafond dur** : total des connexions BLE simultanées ≤ 3 (`CONFIG_BT_NIMBLE_MAX_
+CONNECTIONS`) → l'hôte (RPi/PC) pilote le maître par **COM/Wi-Fi** (pas de
+connexion BLE), les 3 connexions vont aux esclaves. Table de routage `id↔MAC` en
+NVS ; à l'appairage le maître attribue le **plus petit id libre** (1..3).
+Désappairage : `{"t":"pair","a":"unbind","id":n}` (un esclave) ou `id`=0 / **5
+appuis BOOT** sur le maître (toute l'étoile) ; `{"t":"pair","a":"reset"}` sur le
+COM d'un esclave le libère. Paramètres et rôle sont en NVS (`config.h`,
+`Preferences`, namespace `s3kbd`).
 
 ### Invariants à ne pas casser
 
@@ -135,10 +153,11 @@ et rôle sont en NVS (`config.h`, `Preferences`, namespace `s3kbd`).
   déconnexion, la file est vidée et `releaseAll()` est appelé (ne jamais laisser
   une touche collée).
 - **Un seul thread par ressource** : WS TX → tâche `net` ; port COM RX/TX → tâche
-  `com` (`USBCDC::write` peut bloquer 250 ms) ; **client BLE du maître (connect /
-  writeValue / getRssi) → tâche `link` uniquement** (`writeValue` attend un
-  événement GATTC : interdit depuis un callback BLE) ; entrées GPIO → tâche `gpio`.
-  Les callbacks BTC (`onWrite`, notify client) ne font que copier dans une file.
+  `com` (`USBCDC::write` peut bloquer 250 ms) ; **chaque client BLE du maître
+  (connect / writeValue / getRssi) → SA tâche `linkN` uniquement** (`writeValue`
+  attend un événement GATTC : interdit depuis un callback BLE) ; entrées GPIO →
+  tâche `gpio`. Les callbacks BTC (`onWrite`, notify client) ne font que copier
+  dans une file (les notify esclaves → file de relais partagée, drainée par `relay`).
 - **Les interfaces USB sont enregistrées dans les constructeurs** (`USBHIDKeyboard()`,
   `USBCDC`) : les objets HID sont créés par `new` selon `g_cfg` **avant** `USB.begin()`,
   qui n'est appelé que par le sketch (FQBN `CDCOnBoot=default`, sinon le cœur l'appelle
@@ -146,27 +165,33 @@ et rôle sont en NVS (`config.h`, `Preferences`, namespace `s3kbd`).
   (1 interface HID) + **un** CDC ; le port COM réutilise donc la console. Changer un flag
   USB = sauvegarde NVS + redémarrage ; le numéro de série USB dérive des flags (cache
   descripteur Windows).
-- **`cfg` et `pair` sont toujours locaux** ; en mode maître tout le reste est
-  transféré (y compris STOP, hors-file des deux côtés).
+- **`cfg` et `pair` sont toujours locaux** ; sur un maître, une commande `id≠0` est
+  routée vers l'esclave (`id=0`/absent = exécution locale). Le maître **relaie
+  verbatim** les STATUS des esclaves (déjà tagués de leur `selfId`).
 - **STOP est hors-file** : détecté dans le callback d'écriture, il vide la file et
   interrompt immédiatement la séquence en cours (`g_stop`) au lieu d'attendre son
-  tour.
+  tour ; sur un maître il est **diffusé à TOUS les esclaves** (hors-file des deux côtés).
 
 ### Firmware — fichiers
 
 - `hid_firmware.ino` : orchestration (USB HID composite clavier+consumer+souris,
   serveur BLE Bluedroid, parseur ArduinoJson, dispatch, séquenceur, file/worker).
 - `keymap_azerty.h` : table Unicode → frappe(s) HID (voir invariant ci-dessus).
-- `config.h` : paramètres NVS (`cfg_t g_cfg` : flags, rôle, MAC du pair).
+- `config.h` : paramètres NVS (`cfg_t g_cfg` : flags, rôle, `selfId` de l'esclave,
+  MAC du maître `peer[]`, table de routage `slaves[MAX_SLAVES]` + helpers de slot).
 - `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC.
 - `gpio_panel.h` : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11,
   nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`.
-- `ble_link.h` : scan / bind / unbind (exécutés dans le worker) + tâche `link`
-  du maître (reconnexion, écriture, RSSI, relais des STATUS via `g_linkQueue`).
+- `ble_link.h` : étoile multi-esclaves. scan / bind (id auto) / unbind (par id ou
+  tous) exécutés dans le worker + une tâche `linkN` par esclave (reconnexion,
+  écriture, RSSI, événements `link`) + tâche `relay` (rediffuse les STATUS des
+  esclaves via la file partagée `g_relayQueue`). Runtime `g_link[MAX_SLAVES]`.
 - `status_led.h` : indicateur LED RGB WS2812 (GPIO48) dans une tâche dédiée à
-  ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert). Lien maître/esclave actif : l'intensité (bleu maître,
-  vert esclave) suit le RSSI (`ledSetRssi`, -90…-40 dBm ; maître via `linkTask`,
-  esclave via `ble_gap_conn_rssi` dans `loop()`). Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
+  ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert),
+  l'intensité verte suivant le RSSI (`ledSetRssi`, -90…-40 dBm ; via
+  `ble_gap_conn_rssi` dans `loop()`). Sur un **maître** multi-esclaves, la LED
+  reste `LST_CONNECTED` dès qu'un lien est actif (`linkAnyUp()`) sans teinte RSSI
+  (plusieurs esclaves). Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
   **impulsion** brève (`ledPulse`) ; il ne pilote jamais la LED directement.
 
 ### Web — fichiers (`WEB/Keyboard/`)
@@ -178,10 +203,14 @@ Réglages s'ouvre par l'icône ⚙️ de l'en-tête et héberge le bouton Journa
 garde-fou MTU (`MTU_GUARD` 500 o) et le **journal** (chaque JSON émis + chaque
 STATUS reçu), outil de validation. À la connexion, `onConnected()` envoie
 `cfg get` et `applyFlags()` masque les onglets désactivés (`TAB_FLAGS`).
-Le panneau Réglages porte l'appairage (scan → bind, lien, RSSI, unbind) et le
-**test de liaison** (`linkTest()` : pings numérotés, RTT, pertes). Les libellés
-GPIO (`GPIO_OUT`/`GPIO_IN`) doivent rester alignés sur `gpio_panel.h`.
-`WEB/index.html` redirige vers `Keyboard/`.
+Le panneau Réglages porte l'appairage **en étoile** : liste des esclaves
+(`renderSlaves()` depuis `cfg.slaves[]` — id, MAC, lien, RSSI, unbind par id),
+ajout par scan → bind, et le **test de liaison** par cible (`linkTest()` + sélecteur
+`#linkTarget` : pings numérotés au maître ou à un esclave, RTT, pertes). L'onglet
+GPIO a un sélecteur de cible `#gpioTarget` (maître id 0 ou un esclave) ; `send()`
+injecte l'`id` de routage, `handleStatus()` parse le JSON et n'affiche que les
+événements `gpio` de la carte sélectionnée. Les libellés GPIO (`GPIO_OUT`/`GPIO_IN`)
+doivent rester alignés sur `gpio_panel.h`. `WEB/index.html` redirige vers `Keyboard/`.
 
 ## Références
 

@@ -52,7 +52,7 @@ static WebSocketsServer wsServer(WS_PORT);
 //  File de statut vers la tâche réseau (broadcast WS fait UNIQUEMENT par elle)
 // ---------------------------------------------------------------------------
 static QueueHandle_t g_statusQueue = nullptr;
-static char          g_lastStatus[STATUS_MAX] = "ready";   // etat courant (ready/busy) pour un nouveau client
+static char          g_lastStatus[STATUS_MAX] = "{\"id\":0,\"st\":\"ready\"}";   // etat courant (JSON) pour un nouveau client
 
 // Appelable depuis n'importe quelle tâche (worker, callbacks). Ne touche PAS le WS.
 static void wifiQueueStatus(const char* s) {
@@ -124,9 +124,10 @@ static void wifiNetTask(void* arg) {
 
     char item[STATUS_MAX];
     while (xQueueReceive(g_statusQueue, item, 0) == pdTRUE) {
-      // Seuls ready/busy sont un « état courant » (rejoué à un nouveau client) ;
-      // pong:/gpio:/scan:/cfg: sont des événements ponctuels.
-      if (!strcmp(item, "ready") || !strcmp(item, "busy")) {
+      // Seul l'état du MAÎTRE (frame {"id":0,"st":...}) est « courant » (rejoué à
+      // un nouveau client) ; ev:gpio/pong/scan/cfg/link et états d'esclave sont
+      // des événements ponctuels.
+      if (!strncmp(item, "{\"id\":0,\"st\":", 13)) {
         strncpy(g_lastStatus, item, sizeof(g_lastStatus) - 1);
         g_lastStatus[sizeof(g_lastStatus) - 1] = 0;
       }
