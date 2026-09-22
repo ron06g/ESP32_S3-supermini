@@ -13,7 +13,12 @@
   // --- 1) Service Worker (chemin relatif → portée = dossier courant) ---
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' })
+      // updateViaCache:'none' → le navigateur NE sert JAMAIS sw.js depuis son
+      // cache HTTP quand il verifie/telecharge le worker. Sans ca, sur un
+      // hebergement qui ne pose pas d'en-tete no-cache sur sw.js (tout sauf
+      // Apache + .htaccess), un ancien worker peut rester en place et continuer
+      // a servir un app.js/index.html perimes → boutons inertes, regression.
+      navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' })
         .then((reg) => log('service worker enregistré (scope ' + reg.scope + ')'))
         .catch((err) => log('échec service worker : ' + err.message));
     });
