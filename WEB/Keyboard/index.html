@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
 <div class="app">
@@ -86,16 +86,12 @@
 
     <!-- GPIO : sorties (boutons bascule) + entrées (voyants) -->
     <section id="tab-gpio" class="tabpage scrollpage">
-      <div class="row wrap" style="margin-bottom:6px">
-        <label>Carte : <select id="gpioTarget"></select></label>
-        <span class="hint">Lit/écrit les GPIO de la carte choisie : le <b>maître</b> (id 0) ou un <b>esclave</b>.</span>
-      </div>
-      <div class="fngroup"><h3>Sorties (bascule)</h3><div id="gpioOut" class="cluster"></div></div>
-      <div class="fngroup"><h3>Entrées (pull-up, actif bas)</h3><div id="gpioIn" class="cluster"></div></div>
-      <div class="row">
+      <div class="row wrap" style="margin-bottom:8px">
         <button id="btnGpioRead" class="btn ghost">Relire tout</button>
-        <span class="hint">Nommage = sérigraphie S3 SuperMini (n° de GPIO). BOOT = bouton intégré, sans câblage.</span>
+        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties = bascule au clic ;
+          entrées = voyants (pull-up, actif bas). Nommage = sérigraphie SuperMini ; BOOT = bouton intégré.</span>
       </div>
+      <div id="gpioModules"></div>
     </section>
 
     <!-- Réglages (icône ⚙️ de l'en-tête) : paramètres persistants + appairage + test de liaison -->
@@ -182,7 +178,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js"></script>
-<script src="pwa.js"></script>
+<script src="app.js?v=7"></script>
+<script src="pwa.js?v=7"></script>
 </body>
 </html>

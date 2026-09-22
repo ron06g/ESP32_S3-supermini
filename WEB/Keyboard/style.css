@@ -271,3 +271,16 @@ body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
 .cluster .key.gpio { min-width:64px; }
 .key.gpio.on { background:#123021; border-color:var(--green); color:#b7f0c6; }
 .cluster .chip.led { padding:10px 14px; font-size:14px; cursor:default; }
+
+/* GPIO par module : une carte par carte (maître + esclaves), toutes sur un écran */
+#gpioModules { display:grid; grid-template-columns:repeat(auto-fit, minmax(250px, 1fr)); gap:10px; align-items:start; }
+.gpiomod { background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius); padding:12px; }
+.gpiomod h3 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim);
+  margin:0 0 9px; display:flex; align-items:center; gap:7px; }
+.gpiomod h3 .dot { width:9px; height:9px; border-radius:50%; background:var(--text-dim); flex:0 0 auto; }
+.gpiomod[data-gid="0"] h3 .dot { background:var(--accent); }              /* maître */
+.gpiomod:not([data-gid="0"]) h3 .dot { background:var(--green); }         /* esclave */
+.gpiorow { display:flex; align-items:flex-start; gap:8px; margin-bottom:7px; }
+.gpiorow:last-child { margin-bottom:0; }
+.gpiolabel { font-size:11px; color:var(--text-dim); min-width:50px; padding-top:12px; }
+.gpiomod .cluster { flex:1; }

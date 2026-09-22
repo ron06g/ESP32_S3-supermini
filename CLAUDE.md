@@ -207,10 +207,11 @@ Le panneau Réglages porte l'appairage **en étoile** : liste des esclaves
 (`renderSlaves()` depuis `cfg.slaves[]` — id, MAC, lien, RSSI, unbind par id),
 ajout par scan → bind, et le **test de liaison** par cible (`linkTest()` + sélecteur
 `#linkTarget` : pings numérotés au maître ou à un esclave, RTT, pertes). L'onglet
-GPIO a un sélecteur de cible `#gpioTarget` (maître id 0 ou un esclave) ; `send()`
-injecte l'`id` de routage, `handleStatus()` parse le JSON et n'affiche que les
-événements `gpio` de la carte sélectionnée. Les libellés GPIO (`GPIO_OUT`/`GPIO_IN`)
-doivent rester alignés sur `gpio_panel.h`. `WEB/index.html` redirige vers `Keyboard/`.
+GPIO affiche **une section par carte** (`buildGpioModules()` : maître id 0 + chaque
+esclave, tout sur un écran) ; chaque élément porte `data-gid`+`data-gpio`, le clic
+route via `send(…, id)` et `onGpio()` cible `[data-gid][data-gpio]`. « Relire tout »
+lit toutes les cartes. Les libellés GPIO (`GPIO_OUT`/`GPIO_IN`) doivent rester
+alignés sur `gpio_panel.h`. `WEB/index.html` redirige vers `Keyboard/`.
 
 ## Références
 

@@ -518,7 +518,7 @@ function renderCfg() {
   $('#slaveList').classList.toggle('hidden', cfg.role !== 1);
   renderSlaves();
   buildLinkTargets();
-  buildGpioTargets();
+  buildGpioModules();
 }
 
 // Liste des esclaves appairés (maître) : id, MAC, état/RSSI de lien, désappairage par id.
@@ -639,36 +639,51 @@ async function linkTest(N = 20, gapMs = 100) {
 // ===========================================================================
 const GPIO_OUT = ['4', '5', '6', '7'];
 const GPIO_IN  = ['BOOT', '8', '9', '10', '11'];
-// Carte GPIO ciblée : 0 = maître (local), 1..3 = esclave. Les broches affichées
-// sont celles de CETTE carte ; on ne reflète que les événements de même id.
-function gpioTarget() { const s = $('#gpioTarget'); return s ? +s.value : 0; }
-function buildGpioTargets() {
-  const sel = $('#gpioTarget'); if (!sel) return;
-  const prev = sel.value;
-  sel.innerHTML = '';
-  const add = (id, label) => { const o = document.createElement('option'); o.value = id; o.textContent = label; sel.appendChild(o); };
-  add(0, 'Maître (id 0)');
-  for (const s of (cfg && cfg.slaves) || []) add(s.id, 'Esclave ' + s.id);
-  if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
+// Liste des cartes à afficher : maître (id 0) + esclaves appairés.
+function moduleList() {
+  const mods = [{ id:0, name:'Maître (id 0)' }];
+  for (const s of (cfg && cfg.slaves) || []) mods.push({ id:s.id, name:'Esclave ' + s.id });
+  return mods;
 }
-function buildGpio() {
-  const out = $('#gpioOut'), inn = $('#gpioIn'); out.innerHTML = ''; inn.innerHTML = '';
-  for (const p of GPIO_OUT) {
-    const el = document.createElement('div'); el.className = 'key nav gpio'; el.dataset.gpio = p; el.textContent = p;
-    el.addEventListener('click', () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, gpioTarget()); });
-    out.appendChild(el);
-  }
-  for (const p of GPIO_IN) {
-    const el = document.createElement('span'); el.className = 'chip led'; el.dataset.gpio = p; el.textContent = p;
-    inn.appendChild(el);
+// Une SECTION GPIO par module, toutes affichées ensemble. Les éléments portent
+// data-gid (id de la carte) + data-gpio (broche) → clic routé et état ciblé.
+function buildGpioModules() {
+  const box = $('#gpioModules'); if (!box) return;
+  box.innerHTML = '';
+  for (const mod of moduleList()) {
+    const sec = document.createElement('div'); sec.className = 'gpiomod'; sec.dataset.gid = mod.id;
+    const h = document.createElement('h3'); h.innerHTML = `<span class="dot"></span>${esc(mod.name)}`; sec.appendChild(h);
+    const mkRow = (label, cells) => {
+      const row = document.createElement('div'); row.className = 'gpiorow';
+      row.innerHTML = `<span class="gpiolabel">${label}</span>`;
+      const cl = document.createElement('div'); cl.className = 'cluster';
+      cells.forEach((c) => cl.appendChild(c)); row.appendChild(cl); return row;
+    };
+    const outs = GPIO_OUT.map((p) => {
+      const el = document.createElement('div'); el.className = 'key nav gpio';
+      el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
+      el.addEventListener('click', () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, mod.id); });
+      return el;
+    });
+    const ins = GPIO_IN.map((p) => {
+      const el = document.createElement('span'); el.className = 'chip led';
+      el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
+      return el;
+    });
+    sec.appendChild(mkRow('Sorties', outs));
+    sec.appendChild(mkRow('Entrées', ins));
+    box.appendChild(sec);
   }
 }
 function onGpio(m) {
-  if (m.id !== gpioTarget()) return;                    // n'affiche que la carte sélectionnée
   const v = (m.v === 1 || m.v === true);
-  document.querySelectorAll(`[data-gpio="${m.p}"]`).forEach((el) => el.classList.toggle('on', v));
+  document.querySelectorAll(`[data-gid="${m.id}"][data-gpio="${m.p}"]`).forEach((el) => el.classList.toggle('on', v));
 }
-function readGpio() { send({ t:'gpio', a:'read' }, false, gpioTarget()); }
+// Relit toutes les cartes (maître + esclaves).
+function readGpio() {
+  if (!activeTransport || !activeTransport.connected) return;
+  for (const mod of moduleList()) send({ t:'gpio', a:'read' }, false, mod.id);
+}
 
 // ===========================================================================
 //  Journal / toast / util
@@ -770,7 +785,6 @@ function wireUI() {
   $('#btnScan').addEventListener('click', startScan);
   $('#btnLinkTest').addEventListener('click', () => linkTest());
   $('#btnGpioRead').addEventListener('click', readGpio);
-  const gt = $('#gpioTarget'); if (gt) gt.addEventListener('change', () => { if (activeTransport && activeTransport.connected) readGpio(); });
 
   matchMedia('(orientation:landscape)').addEventListener('change', updateEnv);
   window.addEventListener('resize', updateEnv);
@@ -820,16 +834,21 @@ function init() {
   window.addEventListener('error', (e) => logLine('err', 'JS: ' + e.message + ' @' + (e.filename || '?') + ':' + (e.lineno || '?')));
   window.addEventListener('unhandledrejection', (e) => logLine('err', 'Promesse rejetée: ' + ((e.reason && e.reason.message) ? e.reason.message : e.reason)));
 
-  buildKeyboard('#kb-azerty', KB_AZERTY);
-  buildKeyboard('#kb-num', KB_NUM);
-  buildFn();
-  buildGpio();
-  renderSteps();
-  refreshMods();
-  initMouse();
-  initTextPass();
-  wireUI();
-  updateEnv();
+  // Étapes de rendu isolées : si l'une échoue (ex. DOM dépareillé par un cache SW
+  // périmé), on N'empêche PAS le câblage du bouton Connecter et le choix du transport.
+  try {
+    buildKeyboard('#kb-azerty', KB_AZERTY);
+    buildKeyboard('#kb-num', KB_NUM);
+    buildFn();
+    buildGpioModules();
+    renderSteps();
+    refreshMods();
+    initMouse();
+    initTextPass();
+  } catch (e) { logLine('err', 'init UI (partiel) : ' + e.message); }
+
+  try { wireUI(); } catch (e) { logLine('err', 'wireUI : ' + e.message); }
+  try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
 
   logLine('in', '=== app.js v7 (étoile multi-esclaves, STATUS JSON, routage par id) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
