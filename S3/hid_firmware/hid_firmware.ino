@@ -775,6 +775,10 @@ static bool bleBegin() {
   snprintf(name, sizeof(name), "%s-%02X%02X", BLE_NAME, mac[4], mac[5]);
 
   BLEDevice::init(name);
+  // Conso/chaleur : en mode standard (telephone a courte portee) on baisse la
+  // puissance BLE ; en appaire (maitre/esclave) le lien BLE<->BLE reste a fond.
+  if (g_cfg.role == ROLE_STD) BLEDevice::setPower(ESP_PWR_LVL_N0);   // 0 dBm : couvre une piece
+  else                        BLEDevice::setPower(ESP_PWR_LVL_P9);   // +9 dBm : portee max du lien
   BLEDevice::setMTU(517);                // negociation MTU eleve (socle §5.4)
   strncpy(g_bleMac, BLEDevice::getAddress().toString().c_str(), sizeof(g_bleMac) - 1);
 
@@ -821,6 +825,7 @@ static bool bleBegin() {
 //  setup / loop
 // ===========================================================================
 void setup() {
+  setCpuFrequencyMhz(160);                       // 240->160 MHz : moitie moins de chaleur CPU, large pour ce POC
   Console.begin(115200);                         // CDC 0 : console (le port n'existe qu'apres USB.begin)
 
   // --- LED d'etat (tache dediee) : auto-test puis fond BOOT ---
@@ -845,6 +850,7 @@ void setup() {
                   g_cfg.hidKb, g_cfg.hidMs, g_cfg.serial, g_cfg.gpio, g_cfg.pair,
                   g_cfg.role == ROLE_MASTER ? "MAITRE" : g_cfg.role == ROLE_SLAVE ? "ESCLAVE" : "standard", pm);
   }
+  DBG("[PWR] cpu=%u MHz\n", getCpuFrequencyMhz());
 
   // --- BLE serveur GATT ---
   bool bleOk = bleBegin();

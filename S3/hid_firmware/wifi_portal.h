@@ -162,6 +162,7 @@ static void wifiPortalBegin() {
   WiFi.softAPConfig(AP_IP, AP_IP, AP_MASK);      // IP/passerelle fixes AVANT softAP
   bool ok = WiFi.softAP(AP_SSID, AP_PSK, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
   WiFi.setSleep(false);                           // pas de modem-sleep : captif + WS réactifs
+  WiFi.setTxPower(WIFI_POWER_11dBm);              // conso/chaleur : AP courte portée (tél. en main), ~19->11 dBm
   DBG("[WiFi] SoftAP '%s' %s — IP %s\n",
                 AP_SSID, ok ? "OK" : "ECHEC (cle < 8 car. ?)",
                 WiFi.softAPIP().toString().c_str());
