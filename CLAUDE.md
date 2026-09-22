@@ -164,7 +164,9 @@ et rôle sont en NVS (`config.h`, `Preferences`, namespace `s3kbd`).
 - `ble_link.h` : scan / bind / unbind (exécutés dans le worker) + tâche `link`
   du maître (reconnexion, écriture, RSSI, relais des STATUS via `g_linkQueue`).
 - `status_led.h` : indicateur LED RGB WS2812 (GPIO48) dans une tâche dédiée à
-  ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert). Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
+  ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert). Lien maître/esclave actif : l'intensité (bleu maître,
+  vert esclave) suit le RSSI (`ledSetRssi`, -90…-40 dBm ; maître via `linkTask`,
+  esclave via `ble_gap_conn_rssi` dans `loop()`). Le reste du code déclare un **état** (`ledSetMode`/`ledSetError`) ou une
   **impulsion** brève (`ledPulse`) ; il ne pilote jamais la LED directement.
 
 ### Web — fichiers (`WEB/Keyboard/`)

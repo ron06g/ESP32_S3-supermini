@@ -17,6 +17,12 @@
 //    LST_SLAVE_WAIT   ambre qui respire     (esclave : en attente du maitre)
 //    LST_SLAVE_LINKED vert doux fixe        (esclave : lie au maitre)
 //
+//  Force du signal (appairage maitre/esclave) : si un RSSI est connu
+//  (ledSetRssi, < 0 dBm), l'intensite des fonds LST_CONNECTED (maitre lie) et
+//  LST_SLAVE_LINKED (esclave lie) suit le signal : -40 dBm et mieux = pleine
+//  intensite, -90 dBm et pire = plancher encore visible. RSSI = 0 -> inconnu,
+//  pleine intensite (cas du mode normal avec telephone). Transition lissee.
+//
 //  Impulsions (superposees, breves) :
 //    verte   frappe d'une touche  (ledPulse C_GREEN) — visible en repetition
 //    cyan    touche media / deconnexion
@@ -38,6 +44,9 @@
 #define LED_TICK_MS 20    // periode de rafraichissement (~50 FPS)
 #define LED_PULSE_GAP 45  // temps eteint entre 2 impulsions -> repetitions distinctes
 #define LED_QUEUE_LEN 24  // profondeur de la file d'impulsions
+#define LED_RSSI_HI  -40  // dBm : au-dessus -> intensite pleine
+#define LED_RSSI_LO  -90  // dBm : en dessous -> intensite plancher
+#define LED_RSSI_MIN  28  // plancher (0-255) : la LED reste visible en limite de portee
 
 typedef enum { LST_BOOT, LST_IDLE, LST_CONNECTED, LST_BUSY, LST_ERROR,
                LST_SLAVE_WAIT, LST_SLAVE_LINKED } LedMode;
@@ -58,6 +67,8 @@ static const led_rgb_t C_WHITE  = {LED_MAX * 5 / 6, LED_MAX * 5 / 6, LED_MAX * 5
 // --- Etat partage (ecrit par le firmware, lu par la tache) ---
 static volatile LedMode g_ledMode    = LST_BOOT;
 static volatile uint8_t g_ledErrCode = 1;
+static volatile int     g_ledRssi    = 0;     // dBm du lien maitre/esclave, 0 = inconnu
+static uint8_t          g_ledSigLvl  = 255;   // facteur lisse (tache LED uniquement)
 static QueueHandle_t    g_ledQueue   = nullptr;
 
 // ---------------------------------------------------------------------------
@@ -74,6 +85,24 @@ static inline uint8_t ledTri(uint32_t t, uint32_t period) {
   uint32_t v = (p < half) ? (p * 255 / half) : (255 - (p - half) * 255 / half);
   return (uint8_t)v;
 }
+// Facteur d'intensite cible (0..255) selon le RSSI. Le dBm est deja
+// logarithmique ; le carre donne une variation percue plus reguliere.
+static uint8_t ledRssiTarget() {
+  int r = g_ledRssi;
+  if (r >= 0) return 255;                                    // inconnu
+  if (r >= LED_RSSI_HI) return 255;
+  if (r <= LED_RSSI_LO) return LED_RSSI_MIN;
+  uint32_t x = (uint32_t)(r - LED_RSSI_LO) * 255 / (LED_RSSI_HI - LED_RSSI_LO);  // 0..255
+  return (uint8_t)(LED_RSSI_MIN + (255 - LED_RSSI_MIN) * x * x / (255 * 255));
+}
+// Lissage (~0,3 s) pour eviter les sauts entre deux mesures RSSI.
+static void ledRssiStep() {
+  int tgt = ledRssiTarget(), cur = g_ledSigLvl;
+  int d = (tgt - cur) / 8;
+  if (d == 0 && tgt != cur) d = (tgt > cur) ? 1 : -1;
+  g_ledSigLvl = (uint8_t)(cur + d);
+}
+
 static inline void ledWrite(led_rgb_t c) { rgbLedWrite(LED_PIN, c.r, c.g, c.b); }
 
 // Rendu du fond « erreur » : g_ledErrCode clignotements rouges, puis pause.
@@ -93,11 +122,11 @@ static led_rgb_t ledRenderBase(uint32_t t) {
   switch (g_ledMode) {
     case LST_BOOT:      return ledScale(C_WHITE,  ledTri(t, 1200));
     case LST_IDLE:      return ledScale(C_BLUE,   ledTri(t, 1600));  // clignotement lent (fondu)
-    case LST_CONNECTED: return C_BLUE;                               // bleu fixe
+    case LST_CONNECTED: return ledScale(C_BLUE, g_ledSigLvl);        // bleu fixe (x signal si lie)
     case LST_BUSY:      return ledScale(C_VIOLET, ledTri(t, 700));   // activite
     case LST_ERROR:     return ledRenderError(t);
     case LST_SLAVE_WAIT:   return ledScale(C_ORANGE, ledTri(t, 1600));  // esclave sans maitre
-    case LST_SLAVE_LINKED: return ledScale(C_GREEN, 110);             // esclave lie
+    case LST_SLAVE_LINKED: return ledScale(C_GREEN, 110 * g_ledSigLvl / 255);  // esclave lie (x signal)
   }
   return C_OFF;
 }
@@ -116,6 +145,7 @@ static void ledTask(void*) {
   led_pulse_t pend;
 
   for (;;) {
+    ledRssiStep();
     if (!inPulse && gapLeft <= 0 && xQueueReceive(g_ledQueue, &pend, 0) == pdTRUE) {
       inPulse = true; pulseCol = (led_rgb_t){pend.r, pend.g, pend.b}; pulseLeft = pend.on_ms;
     }
@@ -146,6 +176,7 @@ static void ledBegin() {
   xTaskCreatePinnedToCore(ledTask, "led", 4096, nullptr, 1, nullptr, 0);
 }
 static inline void ledSetMode(LedMode m) { g_ledMode = m; }
+static inline void ledSetRssi(int dbm) { g_ledRssi = dbm; }   // 0 = inconnu (pleine intensite)
 static inline void ledSetError(uint8_t code) { g_ledErrCode = code; g_ledMode = LST_ERROR; }
 static inline void ledPulse(led_rgb_t c, uint16_t on_ms) {
   if (!g_ledQueue) return;

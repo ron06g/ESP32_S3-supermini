@@ -92,6 +92,7 @@ static void linkTask(void*) {
       if (g_linkUp) {
         g_linkUp = false; cmd = nullptr;
         linkPurgeTx();
+        ledSetRssi(0);
         notifyStatus("link:down");
         ledSetMode(LST_IDLE);
       }
@@ -110,7 +111,7 @@ static void linkTask(void*) {
         }
         st->registerForNotify(linkNotifyCB);
         g_linkUp = true;
-        lastRssi = millis();
+        lastRssi = millis() - LINK_RSSI_PERIOD_MS;   // 1re mesure RSSI immediate (LED)
         DBGLN("[LINK] lien etabli");
         ledSetMode(LST_CONNECTED);
         notifyStatus("link:up");
@@ -132,6 +133,7 @@ static void linkTask(void*) {
     if (g_linkUp && millis() - lastRssi > LINK_RSSI_PERIOD_MS) {
       lastRssi = millis();
       g_linkRssi = client->getRssi();
+      if (g_linkRssi < 0) ledSetRssi(g_linkRssi);    // intensite LED = force du signal
       char s[24]; snprintf(s, sizeof(s), "link:rssi:%d", (int)g_linkRssi);
       notifyStatus(s);
     }

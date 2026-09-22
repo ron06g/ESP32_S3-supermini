@@ -123,6 +123,7 @@ BLEServer*         g_server     = nullptr;
 static char        g_bleMac[18] = "";
 
 volatile bool g_connected = false;   // un client BLE (telephone, ou le maitre si esclave)
+static volatile uint16_t g_connHandle = BLE_HS_CONN_HANDLE_NONE;  // esclave : lien vers le maitre (RSSI LED)
 volatile bool g_stop      = false;   // demande d'arret de sequence
 QueueHandle_t g_cmdQueue  = nullptr; // file de char* (JSON \0-termine, malloc)
 SemaphoreHandle_t g_stopMux = nullptr; // serialise le fast-path STOP entre BLE et Wi-Fi
@@ -703,6 +704,7 @@ class ServerCB : public BLEServerCallbacks {
       return;
     }
     g_connected = true;
+    if (g_cfg.role == ROLE_SLAVE) g_connHandle = d->conn_handle;
     DBG("[BLE] client connecte %s\n", remote.toString().c_str());
     ledSetMode(ledBaseMode());
     ledPulse(C_GREEN, 90);             // confirmation de connexion
@@ -710,6 +712,8 @@ class ServerCB : public BLEServerCallbacks {
   }
   void onDisconnect(BLEServer* s) override {
     g_connected = false;
+    g_connHandle = BLE_HS_CONN_HANDLE_NONE;
+    ledSetRssi(0);
     DBGLN("[BLE] client deconnecte");
     ledSetMode(ledBaseMode());
     ledPulse(C_CYAN, 140);             // marque la deconnexion, retour au repos
@@ -872,8 +876,16 @@ void setup() {
 }
 
 void loop() {
-  // Tout se passe dans les taches ; ici : mesure de heap periodique (§ risques).
-  vTaskDelay(pdMS_TO_TICKS(10000));
+  // Tout se passe dans les taches ; ici : RSSI du lien (esclave, pour la LED)
+  // toutes les secondes et mesure de heap periodique (§ risques).
+  static uint8_t tick = 0;
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  uint16_t h = g_connHandle;
+  int8_t rssi;
+  if (h != BLE_HS_CONN_HANDLE_NONE && ble_gap_conn_rssi(h, &rssi) == 0 && rssi < 0)
+    ledSetRssi(rssi);                  // intensite LED verte = force du signal
+  if (++tick < 10) return;
+  tick = 0;
   DBG("[HEAP] free=%u internal=%u minint=%u psram=%u\n",
                 ESP.getFreeHeap(),
                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
