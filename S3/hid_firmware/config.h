@@ -57,6 +57,10 @@ struct cfg_t {
   bool     serial;   // 2e port COM (CDC) parlant le protocole
   bool     gpio;     // panneau GPIO
   bool     pair;     // appairage autorisé (scan / bind / provisioning)
+  bool     ble;      // serveur BLE : accepte les connexions d'un contrôleur (smartphone/OS)
+  bool     wifi;     // point d'accès Wi-Fi (SoftAP) + télécommande web
+  bool     boot5;    // BOOT ×5 rapides = désappairage physique (escape hatch)
+  bool     bootRst;  // BOOT maintenu 20 s = reset d'usine (config + bonds, logiciel conservé)
   uint8_t  role;     // ROLE_*
   uint8_t  peer[6];  // esclave : MAC de son maître (whitelist). Inutilisé ailleurs.
   uint8_t  selfId;   // esclave : id attribué par le maître (0 sinon)
@@ -78,6 +82,10 @@ static void cfgLoad() {
   g_cfg.serial = p.getUChar("ser",  0) != 0;
   g_cfg.gpio   = p.getUChar("gpio", 1) != 0;
   g_cfg.pair   = p.getUChar("pair", 1) != 0;
+  g_cfg.ble    = p.getUChar("ble",  1) != 0;             // par défaut : BLE actif
+  g_cfg.wifi   = p.getUChar("wifi", 1) != 0;             // par défaut : Wi-Fi actif
+  g_cfg.boot5  = p.getUChar("bt5",  1) != 0;             // par défaut : BOOT ×5 actif
+  g_cfg.bootRst= p.getUChar("bt20", 1) != 0;             // par défaut : BOOT 20 s actif
   g_cfg.role   = p.getUChar("role", ROLE_STD);
   g_cfg.selfId = p.getUChar("self", 0);
   g_cfg.passkey = p.getUInt("pk", 0);                    // 0 = 000000 par défaut
@@ -107,6 +115,10 @@ static void cfgSave() {
   p.putUChar("ser",  g_cfg.serial ? 1 : 0);
   p.putUChar("gpio", g_cfg.gpio   ? 1 : 0);
   p.putUChar("pair", g_cfg.pair   ? 1 : 0);
+  p.putUChar("ble",  g_cfg.ble    ? 1 : 0);
+  p.putUChar("wifi", g_cfg.wifi   ? 1 : 0);
+  p.putUChar("bt5",  g_cfg.boot5  ? 1 : 0);
+  p.putUChar("bt20", g_cfg.bootRst? 1 : 0);
   p.putUChar("role", g_cfg.role);
   p.putUChar("self", g_cfg.selfId);
   p.putUInt("pk", g_cfg.passkey);

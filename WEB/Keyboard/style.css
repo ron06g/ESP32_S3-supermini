@@ -293,6 +293,8 @@ hr.sep { border:none; border-top:1px solid var(--border); margin:14px 0; }
 .chip.state { cursor:default; font-weight:600; }
 .chip.state.custom { background:#123021; border-color:var(--green); color:#b7f0c6; }
 .chip.state.def { background:var(--bg-key); border-color:var(--amber); color:var(--amber); }
+.switchgrp { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--accent);
+  margin:12px 0 2px; font-weight:700; }
 .switch { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); cursor:pointer; }
 .switch:last-of-type { border-bottom:none; }
 .switch input { width:22px; height:22px; accent-color:var(--accent); flex:0 0 auto; }

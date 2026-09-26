@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=15" />
+  <link rel="stylesheet" href="style.css?v=16" />
 </head>
 <body>
 <div class="app">
@@ -142,9 +142,7 @@
                 <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
                 <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
               </div>
-              <div class="hint">Passkey par défaut <b>000000</b> — à saisir une fois dans la boîte d'appairage du
-                téléphone/OS (pas dans cette page). Le champ affiche <b>••••••</b> quand elle est personnalisée
-                (la valeur n'est jamais transmise).</div>
+              <div class="hint">Modifier le mot de passe de la connexion Bluetooth.</div>
               <div id="secPasskeyHint" class="hint">⚠️ Ordre à respecter : <b>1)</b> désappairez d'abord <b>manuellement tous les
                 modules</b> (esclaves) — c'est requis pour pouvoir changer la passkey. <b>2)</b> changez la passkey : le module
                 efface ses bonds et <b>redémarre</b>. <b>3)</b> « oubliez » le module dans les réglages Bluetooth du téléphone.
@@ -160,8 +158,7 @@
                 <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
                 <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
               </div>
-              <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.
-                Le champ affiche <b>••••••••</b> quand la clé est personnalisée (jamais transmise en clair).</div>
+              <div class="hint">Modifier le mot de passe de la connexion Wifi.</div>
             </div>
           </div>
         </div>
@@ -170,11 +167,27 @@
         <div class="cfgpage" data-subpage="feat">
           <div class="cfgblock">
             <h3>Fonctionnalités</h3>
-            <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + saisie Texte</em></label>
-            <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
-            <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>expose un port USB CDC parlant le protocole JSON (sinon aucun port série — pas de console de debug)</em></label>
+            <div class="hint" style="margin-bottom:4px">Chaque antenne ou fonction désactivée réduit la
+              consommation <b>et</b> la surface d'attaque. Un module « GPIO seul » peut couper le clavier/souris
+              et une antenne. <b>Au moins un canal de commande (Wi-Fi, COM ou BLE) doit rester actif.</b></div>
+
+            <h4 class="switchgrp">Contrôle (HID)</h4>
+            <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + Texte ; décoché : aucun clavier USB n'est créé</em></label>
+            <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris ; décoché : aucune souris USB n'est créée</em></label>
+
+            <h4 class="switchgrp">Communication (antennes / port)</h4>
+            <label class="switch"><input type="checkbox" data-flag="ble"><span>BLE (contrôleur)</span><em>connexion d'un smartphone/OS en Bluetooth ; décoché : plus de connexion téléphone (l'appairage maître↔esclave reste possible)</em></label>
+            <label class="switch"><input type="checkbox" data-flag="wifi"><span>Wi-Fi (SoftAP)</span><em>point d'accès + télécommande web ; décoché : radio Wi-Fi éteinte</em></label>
+            <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>expose un port USB CDC parlant le protocole JSON</em></label>
+
+            <h4 class="switchgrp">Périphériques & appairage</h4>
             <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
-            <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE</em></label>
+            <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE ; BLE + appairage désactivés ⇒ antenne BLE éteinte</em></label>
+
+            <h4 class="switchgrp">Boutons de secours (BOOT)</h4>
+            <label class="switch"><input type="checkbox" data-flag="boot5"><span>BOOT ×5 = désappairage</span><em>5 appuis rapides sur le bouton BOOT libèrent l'étoile</em></label>
+            <label class="switch"><input type="checkbox" data-flag="bootrst"><span>BOOT 20 s = reset d'usine</span><em>maintien 20 s : efface passkey, noms et paramètres (le logiciel est conservé)</em></label>
+
             <div class="row">
               <span class="hint">Enregistrer <b>redémarre</b> le module (USB ré-énuméré) : reconnectez ensuite.</span>
               <div class="spacer"></div>
@@ -237,7 +250,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=15"></script>
-<script src="pwa.js?v=15"></script>
+<script src="app.js?v=16"></script>
+<script src="pwa.js?v=16"></script>
 </body>
 </html>

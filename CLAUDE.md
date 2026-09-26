@@ -102,7 +102,9 @@ Commandes JSON UTF-8 sur CMD, champ `t` : `char` (un caractère, mode direct),
 `txt` (chaîne / macro), `key` (touche nommée / média, action `tap`/`down`/`up`),
 `seq` (séquence prédéfinie `n`, personnalisée `s[]`, ou `stop`), `mouse`
 (déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong`),
-`cfg` (`a`=`get`/`set` : flags persistants, réponse `ev:cfg`, `set` redémarre),
+`cfg` (`a`=`get`/`set` : flags persistants `hid_kb`/`hid_ms`/`serial`/`gpio`/`pair`/
+`ble`/`wifi`/`boot5`/`bootrst`, réponse `ev:cfg`, `set` redémarre ; **au moins un canal
+de commande wifi/serial/ble doit rester actif** — garde-fou côté web),
 `pair` (`a`=`scan`/`bind`/`slave`/`unbind`/`reset` : appairage BLE↔BLE ; `bind`
 porte un `name` optionnel = nom annoncé de l'esclave ; `slave` reçu via PROV porte
 la `pk` = passkey du maître), `sec` (`a`=`passkey`/`wifi`/`get` : passkey LESC et
@@ -164,6 +166,16 @@ Désappairage : `{"t":"pair","a":"unbind","id":n}` (un esclave) ou `id`=0 / **5
 appuis BOOT** sur le maître (toute l'étoile) ; `{"t":"pair","a":"reset"}` sur le
 COM d'un esclave le libère. Paramètres et rôle sont en NVS (`config.h`,
 `Preferences`, namespace `s3kbd`).
+
+**Bouton BOOT (secours physique, tâche `bootResetTask`, chacun désactivable par flag).**
+`boot5` : **5 appuis rapides** (< 3 s) = désappairage (maître : toute l'étoile ; esclave :
+retour standard). `bootrst` : **maintien 20 s** = **reset d'usine** (`nvs_flash_erase` :
+efface passkey, noms, paramètres, table d'appairage + bonds ; **logiciel conservé**,
+défauts au reboot). **Antennes désactivables** (`ble`/`wifi`, conso/chaleur/sécurité) :
+BLE off ⇒ le module n'annonce plus le service (pas de contrôleur smartphone/OS) mais garde
+sa pile pour les liens maître↔esclave si `pair`/rôle l'exige ; **BLE off + `pair` off (module
+autonome) ⇒ radio BLE jamais initialisée (antenne éteinte)**. Wi-Fi off ⇒ pas de SoftAP.
+Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnelles, usbBegin).
 
 ### Invariants à ne pas casser
 

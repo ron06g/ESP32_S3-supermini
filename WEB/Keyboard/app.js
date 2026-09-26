@@ -675,6 +675,13 @@ function renderSlaves() {
 function saveCfg() {
   const o = { t:'cfg', a:'set' };
   document.querySelectorAll('input[data-flag]').forEach((i) => { o[i.dataset.flag] = i.checked; });
+  // Garde-fou : au moins un canal de commande (Wi-Fi, Port COM ou BLE) doit rester
+  // actif, sinon on perd tout moyen de piloter le module. Popup bloquante.
+  if (!o.wifi && !o.serial && !o.ble) {
+    alert('⚠️ Au moins un mode de communication doit rester actif : Wi-Fi, Port COM ou BLE.\n\n'
+        + 'Sans ça, vous perdriez le contrôle du module. Réactivez-en un avant d\'enregistrer.');
+    return;                               // on N'enregistre PAS
+  }
   send(o, true);
 }
 
@@ -1061,7 +1068,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v15 (retrait journal + rebranding + fixes captif/pull-refresh) chargé ===');
+  logLine('in', '=== app.js v16 (flags BLE/Wi-Fi/BOOT + reset usine + garde-fou comm) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

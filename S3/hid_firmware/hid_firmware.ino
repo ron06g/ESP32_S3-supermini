@@ -41,6 +41,7 @@
 #include "USBHIDConsumerControl.h"
 #include "USBHIDMouse.h"
 #include <ArduinoJson.h>
+#include <nvs_flash.h>                 // nvs_flash_erase() : reset d'usine (BOOT 20 s)
 
 // Console de DEBUG supprimee : un module neuf n'expose que le HID (clavier/souris).
 // L'unique CDC (interface 0) n'est cree QUE si le flag `serial` est actif, et sert
@@ -87,6 +88,7 @@ static const size_t   CMD_MAX_BYTES  = 600; // garde-fou taille d'une commande
 static const uint8_t  RESET_BTN_PIN          = 0;
 static const uint8_t  BOOT_RESET_TAPS   = 5;
 static const uint32_t BOOT_RESET_WIN_MS = 3000;
+static const uint32_t BOOT_FACTORY_MS   = 20000;   // BOOT maintenu 20 s = reset d'usine
 
 // --- Declarations avancees partagees par les modules (.h) ---
 static void enqueueCommand(const uint8_t* data, size_t len);
@@ -256,6 +258,15 @@ static void rebootWithStatus(const char* s) {
 static void secClearBonds() {
   int rc = ble_store_clear();
   DBG("[SEC] bonds effaces (rc=%d)\n", rc);
+}
+
+// Reset d'usine (BOOT maintenu 20 s) : efface TOUTE la NVS (config s3kbd : passkey,
+// noms, paramètres, table d'appairage — ET les bonds BLE nimble). Le LOGICIEL est
+// conservé (partition app intacte) ; au reboot, cfgLoad repart des valeurs par défaut.
+// L'appelant redémarre juste après (nvs_flash_erase invalide les handles NVS).
+static void cfgFactoryReset() {
+  nvs_flash_erase();
+  DBGLN("[RESET] NVS effacee (reset d'usine) -> redemarrage");
 }
 
 // Efface le bond d'un pair unique (MAC publique en notation aa:bb:..). Utilise au
@@ -542,6 +553,10 @@ static void statusCfg() {
   d["serial"] = g_cfg.serial ? 1 : 0;
   d["gpio"]   = g_cfg.gpio ? 1 : 0;
   d["pair"]   = g_cfg.pair ? 1 : 0;
+  d["ble"]    = g_cfg.ble ? 1 : 0;
+  d["wifi"]   = g_cfg.wifi ? 1 : 0;
+  d["boot5"]  = g_cfg.boot5 ? 1 : 0;
+  d["bootrst"]= g_cfg.bootRst ? 1 : 0;
   d["role"]   = g_cfg.role;
   d["mac"]    = g_bleMac;
   d["self"]   = g_cfg.selfId;
@@ -576,6 +591,10 @@ static void handleCfg(JsonDocument& doc) {
     g_cfg.serial = jsonFlag(doc["serial"], g_cfg.serial);
     g_cfg.gpio   = jsonFlag(doc["gpio"],   g_cfg.gpio);
     g_cfg.pair   = jsonFlag(doc["pair"],   g_cfg.pair);
+    g_cfg.ble    = jsonFlag(doc["ble"],    g_cfg.ble);
+    g_cfg.wifi   = jsonFlag(doc["wifi"],   g_cfg.wifi);
+    g_cfg.boot5  = jsonFlag(doc["boot5"],  g_cfg.boot5);
+    g_cfg.bootRst= jsonFlag(doc["bootrst"],g_cfg.bootRst);
     cfgSave();
     DBGLN("[CFG] sauvegarde, redemarrage");
     rebootWithStatus("cfg:saved");
@@ -857,30 +876,40 @@ static void workerTask(void* arg) {
 static void bootResetTask(void*) {
   pinMode(RESET_BTN_PIN, INPUT_PULLUP);            // BOOT : bouton vers GND (actif bas)
   uint8_t  taps = 0;
-  uint32_t firstMs = 0, lastEdge = 0;
-  bool pressed = false;
+  uint32_t firstMs = 0, lastEdge = 0, pressStart = 0;
+  bool pressed = false, longFired = false;
   for (;;) {
     bool now = (digitalRead(RESET_BTN_PIN) == LOW);
     uint32_t t = millis();
     if (now != pressed && (t - lastEdge) > 30) {   // anti-rebond 30 ms
       pressed = now; lastEdge = t;
       if (pressed) {                                // front descendant = 1 appui
-        if (taps == 0 || (t - firstMs) > BOOT_RESET_WIN_MS) { taps = 0; firstMs = t; }
-        taps++;
-        ledPulse(C_VIOLET, 60);                     // retour visuel par appui
-        if (taps >= BOOT_RESET_TAPS) {
-          taps = 0;
-          if (g_cfg.role == ROLE_MASTER) {
-            const char* j = "{\"t\":\"pair\",\"a\":\"unbind\"}";
-            enqueueCommand((const uint8_t*)j, strlen(j));
-          } else if (g_cfg.role == ROLE_SLAVE) {
-            const char* j = "{\"t\":\"pair\",\"a\":\"reset\"}";
-            enqueueCommand((const uint8_t*)j, strlen(j));
-          } else {
-            ledPulse(C_ORANGE, 200);                // deja standard : rien a defaire
+        pressStart = t; longFired = false;          // démarre le chrono du maintien long
+        if (g_cfg.boot5) {                          // BOOT ×5 = désappairage (si activé)
+          if (taps == 0 || (t - firstMs) > BOOT_RESET_WIN_MS) { taps = 0; firstMs = t; }
+          taps++;
+          ledPulse(C_VIOLET, 60);                   // retour visuel par appui
+          if (taps >= BOOT_RESET_TAPS) {
+            taps = 0;
+            if (g_cfg.role == ROLE_MASTER) {
+              const char* j = "{\"t\":\"pair\",\"a\":\"unbind\"}";
+              enqueueCommand((const uint8_t*)j, strlen(j));
+            } else if (g_cfg.role == ROLE_SLAVE) {
+              const char* j = "{\"t\":\"pair\",\"a\":\"reset\"}";
+              enqueueCommand((const uint8_t*)j, strlen(j));
+            } else {
+              ledPulse(C_ORANGE, 200);              // deja standard : rien a defaire
+            }
           }
         }
       }
+    }
+    // Maintien long (20 s) = RESET D'USINE (config + bonds), logiciel conservé. Si activé.
+    if (g_cfg.bootRst && pressed && !longFired && (t - pressStart) >= BOOT_FACTORY_MS) {
+      longFired = true;
+      ledSetError(4);                               // signal visuel (4 clignotements)
+      cfgFactoryReset();
+      rebootWithStatus("{\"id\":0,\"ev\":\"sys\",\"factory\":true}");
     }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
@@ -1055,8 +1084,18 @@ static bool bleBegin() {
     char pm[18]; cfgMacStr(g_cfg.peer, pm);
     DBG("[BLE] ESCLAVE : connexions limitees au maitre %s\n", pm);
   }
-  BLEDevice::startAdvertising();
-  DBG("[BLE] annonce '%s' (%s) — service %s\n", name, g_bleMac, SERVICE_UUID);
+  // Annonce le service (visible d'un contrôleur BLE) seulement si `ble` est actif.
+  // EXCEPTIONS : un esclave annonce toujours (pour son maître) ; un module vierge
+  // en appairage annonce pour se faire provisionner. Un maître avec `ble` coupé
+  // garde sa pile BLE (client vers ses esclaves) mais N'ANNONCE PAS → aucun
+  // contrôleur (smartphone/OS) ne peut s'y connecter.
+  bool doAdvertise = g_cfg.ble || g_cfg.role == ROLE_SLAVE || (g_cfg.role == ROLE_STD && g_cfg.pair);
+  if (doAdvertise) {
+    BLEDevice::startAdvertising();
+    DBG("[BLE] annonce '%s' (%s) — service %s\n", name, g_bleMac, SERVICE_UUID);
+  } else {
+    DBGLN("[BLE] pile active (liens) mais SANS annonce (contrôleur BLE désactivé)");
+  }
 
   return g_server && svc && g_cmdChar && g_statusChar;
 }
@@ -1092,17 +1131,21 @@ void setup() {
   }
   DBG("[PWR] cpu=%u MHz\n", getCpuFrequencyMhz());
 
-  // --- BLE serveur GATT ---
-  bool bleOk = bleBegin();
+  // --- BLE serveur GATT : radio allumée seulement si utile ---
+  // ble (contrôleur smartphone/OS) OU pair (provisioning + liens) OU rôle
+  // maître/esclave (lien étoile). Sinon — module autonome avec BLE et appairage
+  // coupés — l'ANTENNE BLE RESTE ÉTEINTE (conso / chaleur / surface d'attaque).
+  bool bleNeeded = g_cfg.ble || g_cfg.pair || g_cfg.role != ROLE_STD;
+  bool bleOk = true;
+  if (bleNeeded) bleOk = bleBegin();
 
   // --- GPIO (pas sur le maitre : les GPIO pilotes sont ceux de l'esclave) ---
   // GPIO locaux : le maitre gere DESORMAIS ses propres GPIO (id 0), en plus de
   // router les GPIO des esclaves. Actifs sur tous les roles si le flag est mis.
   if (g_cfg.gpio) gpioBegin();
 
-  // --- Transport Wi-Fi : jamais sur un esclave ---
-  if (g_cfg.role != ROLE_SLAVE) wifiPortalBegin();
-  else DBGLN("[WiFi] desactive (esclave)");
+  // --- Transport Wi-Fi : jamais sur un esclave, et seulement si le flag wifi est actif ---
+  if (g_cfg.role != ROLE_SLAVE && g_cfg.wifi) wifiPortalBegin();
 
   // --- Lien vers l'esclave (maitre) ---
   if (g_cfg.role == ROLE_MASTER) linkBegin();
