@@ -279,11 +279,19 @@ body.is-phone .subtab { padding:9px 0; }
 .kv span { color:var(--text-dim); } .kv b { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
 
 /* ---- Renommage par module (onglet Module) ---- */
-.renamerow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
-.renamerow .renlabel { min-width:118px; font-weight:600; font-size:14px; }
-.renamerow input { flex:1; min-width:120px; background:var(--bg); color:var(--text);
+/* Largeurs FIXES (label + textbox) pour aligner les lignes maître/esclaves. */
+.renamerow { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:8px; }
+.renamerow .renlabel { flex:0 0 128px; width:128px; font-weight:600; font-size:13.5px; }
+.renamerow input { flex:0 0 168px; width:168px; max-width:48vw; background:var(--bg); color:var(--text);
   border:1px solid var(--border); border-radius:var(--radius); padding:8px 10px; font-size:15px; }
 .renamerow .chip.led { cursor:default; }
+
+/* ---- Modes HID actifs (tags sur la ligne Rôle) ---- */
+.roleval { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.modetags { display:inline-flex; gap:4px; flex-wrap:wrap; }
+.modetag { background:#123021; border:1px solid var(--green); color:#b7f0c6;
+  border-radius:999px; padding:1px 8px; font-size:11px; font-weight:600;
+  font-family:system-ui,-apple-system,sans-serif; }
 
 /* ---- Sécurité : groupes BLE / Wi-Fi + séparateur + état ---- */
 .secgroup { margin:4px 0; }

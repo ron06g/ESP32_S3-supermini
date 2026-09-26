@@ -29,6 +29,17 @@ async function send(obj, reliable=false, id=0) {
   catch (e) { logLine('err', 'écriture: ' + e.message); }
 }
 
+// Flux de coordonnées souris (déplacements dx/dy) : voie RAPIDE dédiée.
+// - aucun acquittement (écriture BLE sans réponse / WS non bloquant) ;
+// - fire-and-forget (pas d'await) → pas de sérialisation des écritures ;
+// - PAS de journalisation (chaque frappe DOM du journal saccadait le pointeur).
+// Réservé au déplacement continu ; clics/molette/boutons passent par send() (journalisés).
+function sendMouseMove(dx, dy) {
+  const t = activeTransport;
+  if (!t || !t.connected || !t.sendFast) return;
+  try { t.sendFast(JSON.stringify({ t:'mouse', dx, dy })); } catch (e) {}
+}
+
 // ===========================================================================
 //  Connexion (bouton unique état + action)
 // ===========================================================================
@@ -143,6 +154,13 @@ const bleTransport = {
     if (!reliable && cmdChar.writeValueWithoutResponse) await cmdChar.writeValueWithoutResponse(data);
     else await cmdChar.writeValue(data);
   },
+  // Voie RAPIDE pour le flux de coordonnées souris : écriture SANS RÉPONSE (aucun
+  // acquittement ATT) et SANS await → pas de sérialisation ni de latence. Jamais
+  // de repli sur writeValue (acquitté) qui saccaderait le pointeur.
+  sendFast(json) {
+    if (!cmdChar || !cmdChar.writeValueWithoutResponse) return;
+    cmdChar.writeValueWithoutResponse(new TextEncoder().encode(json)).catch(() => {});
+  },
 };
 const wifiTransport = {
   kind: 'wifi', ws: null, ip: null,
@@ -153,6 +171,8 @@ const wifiTransport = {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error('WebSocket non ouvert');
     this.ws.send(json);   // TCP : fiable et ordonné, le drapeau « reliable » est sans objet
   },
+  // Voie rapide souris : même canal (le WebSocket n'acquitte pas au niveau appli).
+  sendFast(json) { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(json); },
 };
 function wifiConnect(ip) {
   const url = 'ws://' + ip + ':' + WIFI_WS_PORT + '/';
@@ -346,7 +366,7 @@ function onNamedKey(d, el) {
 function initMouse() {
   const pad = $('#trackpad');
   let last = null, accX = 0, accY = 0, timer = null, downT = 0, moved = 0;
-  const sens = () => (+$('#mouseSens').value || 8) / 8;
+  const sens = () => (+$('#mouseSens').value || 15) / 8;
   const flush = () => {
     if (accX || accY) {
       // Repli rotation CSS (paysage logiciel) : le trackpad est pivoté de 90°
@@ -355,7 +375,7 @@ function initMouse() {
       // donc les deltas dans le repère perçu : dx = +dYphys, dy = -dXphys.
       const dx = cssRotated ? accY : accX;
       const dy = cssRotated ? -accX : accY;
-      send({ t:'mouse', dx:Math.round(dx), dy:Math.round(dy) });
+      sendMouseMove(Math.round(dx), Math.round(dy));   // voie rapide : pas d'ACK, pas de journal
       accX = accY = 0;
     }
     timer = null;
@@ -560,6 +580,16 @@ function renderCfg() {
   document.querySelectorAll('input[data-flag]').forEach((i) => { i.checked = !!cfg[i.dataset.flag]; });
   $('#cfgMac').textContent = cfg.mac || '–';
   $('#cfgRole').textContent = ROLE_NAMES[cfg.role] || cfg.role;
+  // Modes HID actifs, en tags, sur la ligne Rôle (Clavier / Souris / COM).
+  const modes = [];
+  if (cfg.hid_kb) modes.push('Clavier');
+  if (cfg.hid_ms) modes.push('Souris');
+  if (cfg.serial) modes.push('COM');
+  const mt = $('#cfgModes');
+  if (mt) {
+    mt.innerHTML = '';
+    modes.forEach((m) => { const s = document.createElement('span'); s.className = 'modetag'; s.textContent = m; mt.appendChild(s); });
+  }
   if ($('#cfgName')) $('#cfgName').value = cfg.name || '';
   const slaves = cfg.slaves || [];
   // Sécurité : on ne peut changer la passkey que sans esclave appairé (sinon il
@@ -746,7 +776,7 @@ function buildLinkTargets() {
   sel.innerHTML = '';
   const add = (id, label) => { const o = document.createElement('option'); o.value = id; o.textContent = label; sel.appendChild(o); };
   add(0, (cfg && cfg.name) ? cfg.name + ' (id 0)' : 'Maître (id 0)');
-  for (const s of (cfg && cfg.slaves) || []) add(s.id, (s.name || 'Esclave ' + s.id));
+  for (const s of (cfg && cfg.slaves) || []) add(s.id, (s.name || 'Esclave ' + s.id) + ' (id ' + s.id + ')');
   if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
 }
 
@@ -1041,7 +1071,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v13 (renommage par module + SSID Wi-Fi + état passkey) chargé ===');
+  logLine('in', '=== app.js v14 (souris fluide sans ACK + sensibilité 15 + tags modes + fix textes) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

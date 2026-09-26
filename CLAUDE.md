@@ -45,13 +45,15 @@ arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default
 - Prérequis : cœur **esp32 ≥ 2.0.14**, bibliothèque **ArduinoJson v7**,
   bibliothèque **WebSockets** (Markus Sattler / Links2004) pour le transport Wi-Fi.
 - Via l'IDE : Board « ESP32S3 Dev Module », **USB Mode = USB-OTG (TinyUSB)**,
-  **USB CDC On Boot = Disabled** (le sketch possède la console USB `Console` et
-  appelle lui-même `USB.begin()` après avoir construit les interfaces choisies en
-  NVS ; avec « Enabled » le cœur appelle `USB.begin()` avant `setup()` et le HID
-  disparaît), Upload Mode = UART0 / Hardware CDC.
+  **USB CDC On Boot = Disabled** (le sketch appelle lui-même `USB.begin()` après
+  avoir construit les interfaces choisies en NVS ; avec « Enabled » le cœur appelle
+  `USB.begin()` avant `setup()` et le HID disparaît), Upload Mode = UART0 / Hardware CDC.
+- **La console de DEBUG a été supprimée** : un module neuf n'expose que le HID
+  (clavier/souris). L'unique CDC (interface 0) n'est créé **que si le flag `serial`
+  est actif** (port protocole, cf. `com_port.h`) ; sinon aucun port série. Il n'y a
+  donc plus de sortie de debug (`DBG`/`DBGLN` sont des no-op).
 - **Après l'upload : appuyer sur RESET** — sinon la carte peut rester en ROM
   (« USB JTAG/serial debug unit ») sans démarrer le firmware.
-- Console série : nouveau port COM à 115200 bauds après RESET.
 - Test sans le site : client BLE générique (nRF Connect), écrire du JSON sur CMD,
   s'abonner à STATUS. Exemples dans `S3/hid_firmware/README.md`.
 
@@ -125,7 +127,7 @@ sur ce lien chiffré, efface le bond bootstrap, reboot ; au régime établi le l
 maître↔esclave se ré-appaire en MITM. **Changer la passkey efface les bonds**
 (`ble_store_clear`) — sinon l'ancienne LTK reste valable — et **exige d'abord de
 désappairer tous les esclaves** ; côté téléphone il faut « oublier » le module.
-Le mot de passe Wi-Fi (`apPsk`, ex-`apikey00` en dur) est aussi dans la NVS.
+Le mot de passe Wi-Fi (`apPsk`, défaut `AP_PSK_DEFAULT` = `12345678`) est aussi dans la NVS.
 
 **Champ `id` (routage étoile).** Chaque commande accepte un `id` optionnel
 (**0 = maître/local par défaut**, 1..3 = esclave). Sur un maître, une commande
@@ -144,10 +146,11 @@ en JSON `{"id":g_myId,…}` et laisse passer une frame déjà JSON (`statusRaw`)
 
 **Troisième transport (port COM) et rôles maître/esclave.** L'ESP32-S3 (USB-OTG
 FS, 6 endpoints) ne peut pas héberger clavier + souris + **deux** CDC (composite
-refusé, Windows code 10). Le port COM **réutilise donc l'unique CDC** (`com_port.h`,
-interface 0) : si le flag `serial` est actif, ce CDC parle le protocole (1 ligne =
-1 commande, STATUS en lignes, logs de debug tus) ; sinon il reste la console de
-debug. Un maître peut s'appairer en **étoile** avec jusqu'à **`MAX_SLAVES` = 3**
+refusé, Windows code 10). Le port COM utilise donc l'**unique CDC** (`com_port.h`,
+interface 0), **créé seulement si le flag `serial` est actif** (1 ligne = 1 commande,
+STATUS en lignes) ; sinon **aucun CDC n'est exposé** (la console de debug a été
+supprimée — un module neuf n'a que le HID). Un maître peut s'appairer en **étoile**
+avec jusqu'à **`MAX_SLAVES` = 3**
 esclaves (`ble_link.h`). **Le maître (id 0) injecte le HID/GPIO/COM LOCALEMENT** et
 **route par `id`** vers l'esclave désigné (une tâche `linkN` + client GATT par
 esclave, file de relais partagée) ; il garde BLE + Wi-Fi pour le téléphone. Un

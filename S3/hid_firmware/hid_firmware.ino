@@ -43,9 +43,9 @@
 #include "USBHIDMouse.h"
 #include <ArduinoJson.h>
 
-// Console debug/flash = USB CDC interface 0, possedee par le sketch (CDC On Boot
-// desactive). Construite a l'init statique -> enregistree avant USB.begin().
-static USBCDC Console(0);
+// Console de DEBUG supprimee : un module neuf n'expose que le HID (clavier/souris).
+// L'unique CDC (interface 0) n'est cree QUE si le flag `serial` est actif, et sert
+// alors UNIQUEMENT le protocole (port COM, cf. com_port.h). Aucune sortie de debug.
 
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -100,10 +100,10 @@ static void secUnpairMac(const uint8_t* mac);   // efface le bond d'un pair (des
 
 #include "config.h"                    // parametres NVS (g_cfg)
 
-// Logs de debug sur la console USB. TUS quand le port serie protocole est actif :
-// le CDC unique porte alors le protocole, on le garde propre. (g_cfg vient de config.h)
-#define DBG(...)  do { if (!g_cfg.serial) Console.printf(__VA_ARGS__); } while (0)
-#define DBGLN(s)  do { if (!g_cfg.serial) Console.println(s); } while (0)
+// DEBUG retire du firmware : DBG/DBGLN sont des no-op (aucune console USB). Les
+// appels restent en place mais ne produisent rien (le compilateur les elimine).
+#define DBG(...)  do {} while (0)
+#define DBGLN(s)  do {} while (0)
 #include "status_led.h"
 #include "web_assets.h"                // app WEB/Keyboard/ embarquee (genere)
 #include "wifi_portal.h"               // SoftAP + portail captif + WebSocket
@@ -242,8 +242,7 @@ static void notifyStatus(const char* s) {
 // Emet un statut, laisse le temps aux transports de l'ecouler, redemarre.
 static void rebootWithStatus(const char* s) {
   notifyStatus(s);
-  vTaskDelay(pdMS_TO_TICKS(300));
-  Console.flush();
+  vTaskDelay(pdMS_TO_TICKS(300));       // laisse le temps d'ecouler le statut (BLE/WS/COM)
   ESP.restart();
 }
 
@@ -549,7 +548,7 @@ static void statusCfg() {
   d["self"]   = g_cfg.selfId;
   d["name"]   = g_cfg.name;                          // nom convivial du module ("" = defaut)
   d["pkset"]  = g_cfg.passkey ? 1 : 0;               // passkey personnalisee ? (jamais la valeur)
-  d["wifiset"]= (strcmp(g_cfg.apPsk, "apikey00") != 0) ? 1 : 0;   // PSK Wi-Fi personnalise ?
+  d["wifiset"]= (strcmp(g_cfg.apPsk, AP_PSK_DEFAULT) != 0) ? 1 : 0;   // PSK Wi-Fi personnalise ?
   char peer[18] = "";
   if (cfgPeerValid()) cfgMacStr(g_cfg.peer, peer);   // esclave : MAC de son maitre
   d["peer"]   = peer;
@@ -621,7 +620,7 @@ static void handleSec(JsonDocument& doc) {
   }
   char s[80];
   snprintf(s, sizeof(s), "{\"id\":0,\"ev\":\"sec\",\"pkset\":%d,\"wifiset\":%d}",
-           g_cfg.passkey ? 1 : 0, strcmp(g_cfg.apPsk, "apikey00") ? 1 : 0);
+           g_cfg.passkey ? 1 : 0, strcmp(g_cfg.apPsk, AP_PSK_DEFAULT) ? 1 : 0);
   statusRaw(s);
 }
 
@@ -1068,7 +1067,6 @@ static bool bleBegin() {
 // ===========================================================================
 void setup() {
   setCpuFrequencyMhz(160);                       // 240->160 MHz : moitie moins de chaleur CPU, large pour ce POC
-  Console.begin(115200);                         // CDC 0 : console (le port n'existe qu'apres USB.begin)
 
   // --- LED d'etat (tache dediee) : auto-test puis fond BOOT ---
   ledBegin();

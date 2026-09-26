@@ -34,7 +34,7 @@
 // ---------------------------------------------------------------------------
 static const char*     AP_SSID   = "S3-KBD";
 // Clé WPA2 : désormais dans la config NVS (g_cfg.apPsk, cf. config.h), modifiable
-// via {"t":"sec","a":"wifi","psk":"…"}. Défaut « apikey00 » posé par cfgLoad.
+// via {"t":"sec","a":"wifi","psk":"…"}. Défaut AP_PSK_DEFAULT (« 12345678 ») posé par cfgLoad.
 // (>= 8 car. requis par WPA2 : une clé plus courte fait échouer softAP.)
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_MASK(255, 255, 255, 0);

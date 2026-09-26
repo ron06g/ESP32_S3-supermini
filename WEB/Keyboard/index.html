@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
 <div class="app">
@@ -112,7 +112,7 @@
           <div class="cfgblock">
             <h3>Informations</h3>
             <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
-            <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
+            <div class="kv"><span>Rôle</span><span class="roleval"><b id="cfgRole">–</b><span id="cfgModes" class="modetags"></span></span></div>
             <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
           </div>
 
@@ -146,9 +146,10 @@
               <div class="hint">Passkey par défaut <b>000000</b> — à saisir une fois dans la boîte d'appairage du
                 téléphone/OS (pas dans cette page). Le champ affiche <b>••••••</b> quand elle est personnalisée
                 (la valeur n'est jamais transmise).</div>
-              <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
-                « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
-                <b>Désappairez d'abord tous les esclaves.</b></div>
+              <div id="secPasskeyHint" class="hint">⚠️ Ordre à respecter : <b>1)</b> désappairez d'abord <b>manuellement tous les
+                modules</b> (esclaves) — c'est requis pour pouvoir changer la passkey. <b>2)</b> changez la passkey : le module
+                efface ses bonds et <b>redémarre</b>. <b>3)</b> « oubliez » le module dans les réglages Bluetooth du téléphone.
+                <b>4)</b> une fois reconnecté, refaites l'appairage en <b>respectant l'ordre</b>.</div>
             </div>
 
             <hr class="sep">
@@ -172,7 +173,7 @@
             <h3>Fonctionnalités</h3>
             <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + saisie Texte</em></label>
             <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
-            <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>le port USB CDC bascule en mode protocole JSON (au lieu de la console de debug)</em></label>
+            <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>expose un port USB CDC parlant le protocole JSON (sinon aucun port série — pas de console de debug)</em></label>
             <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
             <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE</em></label>
             <div class="row">
@@ -241,14 +242,14 @@
 <div id="mouseSettings" class="popup hidden">
   <div class="popup-inner">
     <div class="popup-head">Paramètres souris <button id="btnMouseClose" class="btn ghost icon">✕</button></div>
-    <label class="sens">Sensibilité <input id="mouseSens" type="range" min="1" max="20" value="8"><span id="sensVal">8</span></label>
+    <label class="sens">Sensibilité <input id="mouseSens" type="range" min="1" max="20" value="15"><span id="sensVal">15</span></label>
     <div class="hint">Vitesse du curseur pour les déplacements sur le trackpad.</div>
   </div>
 </div>
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=13"></script>
-<script src="pwa.js?v=13"></script>
+<script src="app.js?v=14"></script>
+<script src="pwa.js?v=14"></script>
 </body>
 </html>

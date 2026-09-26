@@ -41,6 +41,10 @@ enum : uint8_t { ROLE_STD = 0, ROLE_MASTER = 1, ROLE_SLAVE = 2 };
 // de chaque esclave (cf. hid_firmware.ino, budget STATUS_MAX).
 #define NAME_MAX 20
 
+// Clé WPA2 par défaut du SoftAP (module neuf). >= 8 caractères (contrainte WPA2).
+// Sert aussi de référence pour l'indicateur « Wi-Fi personnalisé » (statusCfg).
+#define AP_PSK_DEFAULT "12345678"
+
 struct slave_nv_t {
   uint8_t id;             // 1..MAX_SLAVES ; 0 = slot libre
   uint8_t mac[6];         // MAC BLE de l'esclave
@@ -79,7 +83,7 @@ static void cfgLoad() {
   g_cfg.passkey = p.getUInt("pk", 0);                    // 0 = 000000 par défaut
   memset(g_cfg.apPsk, 0, sizeof(g_cfg.apPsk));
   if (p.getString("wpsk", g_cfg.apPsk, sizeof(g_cfg.apPsk)) == 0)
-    strlcpy(g_cfg.apPsk, "apikey00", sizeof(g_cfg.apPsk));   // défaut historique
+    strlcpy(g_cfg.apPsk, AP_PSK_DEFAULT, sizeof(g_cfg.apPsk));   // défaut module neuf
   memset(g_cfg.name, 0, sizeof(g_cfg.name));
   p.getString("nm", g_cfg.name, sizeof(g_cfg.name));     // "" si absent
   memset(g_cfg.peer, 0, 6);

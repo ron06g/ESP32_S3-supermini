@@ -8,9 +8,9 @@
 //  cahier des charges §3.2 (« budget d'endpoints »). On n'ajoute donc PAS de 2e
 //  CDC : le port COM RÉUTILISE l'unique CDC (interface 0), la console `Console`.
 //
-//  Rôle du CDC selon le flag `serial` (config NVS) :
-//    - serial OFF : console de debug (logs `Console.printf`), pas d'I/O protocole ;
-//    - serial ON  : PORT PROTOCOLE — comBegin() démarre la tâche `com` qui lit le
+//  Rôle du CDC selon le flag `serial` (config NVS) — le DEBUG est SUPPRIMÉ :
+//    - serial OFF : AUCUN CDC (le module n'expose que le HID clavier/souris) ;
+//    - serial ON  : PORT PROTOCOLE — comBegin() crée le CDC + démarre la tâche `com` qui lit le
 //                   JSON (1 ligne = 1 commande) et écrit les STATUS (1 par ligne),
 //                   et les logs de debug sont tus (DBG dans le .ino) pour garder
 //                   le flux propre. Vitesse nominale (USB CDC l'ignore : 9600 8N1
@@ -21,7 +21,7 @@
 //  ne fait que poster dans une file (comQueueStatus).
 //
 //  Fournis par hid_firmware.ino avant l'include : STATUS_MAX, CMD_MAX_BYTES,
-//  enqueueCommand(), notifyStatus(), et l'objet console `USBCDC Console`.
+//  enqueueCommand(), notifyStatus(). (Le CDC est créé ici, plus de console debug.)
 // ===========================================================================
 #pragma once
 #include "USB.h"
@@ -68,10 +68,12 @@ static void comTask(void*) {
   }
 }
 
-// À appeler depuis usbBegin() seulement si g_cfg.serial. Réutilise la console
-// (interface 0) : aucun endpoint supplémentaire, donc HID clavier+souris préservé.
+// À appeler depuis usbBegin() seulement si g_cfg.serial. Crée l'UNIQUE CDC
+// (interface 0) — pas de debug, donc il n'existe QUE dans ce mode. Un seul CDC :
+// aucun endpoint supplémentaire, HID clavier+souris préservé.
 static void comBegin() {
-  g_com = &Console;
+  g_com = new USBCDC(0);                    // enregistre l'interface AVANT USB.begin() (appelé juste après)
+  g_com->begin(115200);
   g_com->setRxBufferSize(1024);
   g_com->setTxTimeoutMs(20);               // ne jamais bloquer longtemps la tâche com
   g_comTxQueue = xQueueCreate(16, STATUS_MAX);
