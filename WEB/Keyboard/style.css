@@ -51,8 +51,6 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
 /* ---- Bandeaux ---- */
 .banner { background:#3d1e1e; border:1px solid var(--red); color:#ffd7d5; padding:10px 12px;
   border-radius:var(--radius); margin:4px 0; line-height:1.5; font-size:13px; }
-.rotate-hint { background:#3a2f10; border:1px solid var(--amber); color:#ffe9b0; padding:14px 16px;
-  border-radius:var(--radius); margin:8px 0; font-size:17px; font-weight:600; text-align:center; }
 
 /* ---- Onglets ---- */
 .tabs { display:flex; gap:3px; border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none; }
@@ -191,15 +189,10 @@ textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid
 .empty { color:var(--text-dim); font-size:13px; padding:6px 2px; }
 .predef { margin-top:12px; }
 
-/* ---- Journal (tiroir) ---- */
-.log-drawer { position:fixed; left:0; right:0; bottom:0; height:45vh; z-index:40;
-  background:var(--bg-elev); border-top:1px solid var(--border); border-radius:14px 14px 0 0;
-  display:flex; flex-direction:column; box-shadow:0 -8px 30px rgba(0,0,0,.5); }
-.drawer-head { display:flex; align-items:center; gap:8px; padding:10px 12px; font-weight:700;
-  border-bottom:1px solid var(--border); }
-.drawer-head .btn { margin-left:auto; } .drawer-head .btn + .btn { margin-left:6px; }
-.log { flex:1; overflow-y:auto; padding:8px 12px; font-family:ui-monospace,Menlo,Consolas,monospace;
-  font-size:12px; line-height:1.5; }
+/* ---- Journal (onglet dédié dans les Réglages) ---- */
+.log { overflow-y:auto; padding:8px 12px; font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:12px; line-height:1.5; background:var(--bg-elev); border:1px solid var(--border);
+  border-radius:var(--radius); }
 .log .line { white-space:pre-wrap; word-break:break-all; }
 .log .out{color:#79c0ff;} .log .in{color:var(--green);} .log .err{color:var(--red);} .log .t{color:var(--text-dim);}
 
@@ -250,6 +243,34 @@ body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
 /* ===========================================================================
    Réglages / appairage / GPIO
    =========================================================================== */
+/* Panneau Réglages : sous-onglets fixés en haut, contenu défilant en dessous.
+   Une seule section visible à la fois -> pas de long défilement vertical. */
+#tab-cfg.cfgtab.active { display:flex; flex-direction:column; }
+.subtabs { display:flex; gap:5px; padding:8px 0 10px; border-bottom:1px solid var(--border);
+  flex:0 0 auto; }
+.subtab { flex:1 1 0; min-width:0; display:flex; align-items:center; justify-content:center; gap:6px;
+  background:var(--bg-key); border:1px solid var(--border); color:var(--text-dim);
+  padding:8px 6px; border-radius:var(--radius); font-size:13px; font-weight:600; cursor:pointer;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition:background .12s; }
+.subtab:hover { background:var(--bg-key-hi); }
+.subtab .ti { font-size:16px; flex:0 0 auto; }
+.subtab.active { background:var(--accent-2); border-color:var(--accent); color:#fff; }
+.cfgpages { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-top:12px; }
+.cfgpage { display:none; }
+.cfgpage.active { display:block; }
+/* Hors connexion : bandeau + sections grisées (Journal exclu, utile hors ligne). */
+.cfg-offline { flex:0 0 auto; margin-top:10px; padding:9px 12px; border-radius:var(--radius);
+  background:var(--bg-key); border:1px solid var(--amber); color:var(--amber);
+  font-size:13px; line-height:1.4; text-align:center; }
+#tab-cfg.locked .cfgpage:not([data-subpage="log"]) { opacity:.5; }
+/* Journal : occupe toute la hauteur du panneau, seul le log défile. */
+.cfgpage[data-subpage="log"].active { display:flex; flex-direction:column; height:100%; }
+.cfgpage[data-subpage="log"] .logbar { flex:0 0 auto; margin-top:0; }
+.cfgpage[data-subpage="log"] .log { flex:1; min-height:0; }
+/* Téléphone : sous-onglets en icônes seules (comme la barre principale) */
+body.is-phone .subtab .tl { display:none; }
+body.is-phone .subtab { padding:9px 0; }
+
 .cfgblock { background:var(--bg-elev); border:1px solid var(--border); border-radius:var(--radius);
   padding:12px 14px; margin-bottom:12px; }
 .cfgblock h3 { font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-dim);
@@ -286,3 +307,25 @@ body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
 .gpiorow:last-child { margin-bottom:0; }
 .gpiolabel { font-size:11px; color:var(--text-dim); min-width:50px; padding-top:12px; }
 .gpiomod .cluster { flex:1; }
+
+/* ===========================================================================
+   Rotation PAYSAGE forcée — REPLI CSS (quand l'API d'orientation échoue :
+   iPhone / portail captif Wi-Fi / plein écran refusé). On pivote TOUTE la page
+   (body) de 90°. Les dimensions sont permutées (largeur = hauteur d'écran, et
+   inversement) puis on tourne autour du centre : la boîte pivotée remplit
+   exactement l'écran portrait, et le contenu s'affiche en paysage.
+   NB : le transform fait de <body> le bloc conteneur des enfants position:fixed
+   (popups, toast) → ils pivotent avec la page. On repasse donc les hauteurs
+   exprimées en dvh (calées sur l'écran physique) en 100% de la boîte pivotée.
+   =========================================================================== */
+body.force-rotate {
+  position:fixed; top:50%; left:50%;
+  width:100dvh; height:100dvw;                        /* dimensions permutées */
+  transform:translate(-50%,-50%) rotate(90deg);
+  transform-origin:center center;
+  overflow:hidden;
+}
+body.force-rotate .app { width:100%; height:100%; max-width:none; }
+body.force-rotate #textInput .textinput-inner { height:100%; }
+/* Indique visuellement que la rotation forcée est active. */
+#btnRotate.active { background:var(--bg-key-hi); border-color:var(--accent); color:var(--accent); }

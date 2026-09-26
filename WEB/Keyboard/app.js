@@ -86,7 +86,8 @@ async function bleConnect() {
 }
 function bleDisconnect() { if (gatt && gatt.connected) gatt.disconnect(); onDisconnected(); }
 function onDisconnected() {
-  cmdChar = statusChar = gatt = null; lastStatus = '';
+  cmdChar = statusChar = gatt = null; lastStatus = ''; cfg = null;
+  setCfgLocked(true);          // plus de config live : Réglages en lecture seule
   setConn('off'); logLine('err', 'déconnecté');
 }
 // Statut unifié : appelé par le BLE (après décodage DataView) et par le Wi-Fi (frame texte).
@@ -163,7 +164,7 @@ function wifiConnect(ip) {
   wifiTransport.ws = ws;
   ws.onopen    = () => { deviceName = 'S3-KBD (Wi-Fi)'; lastStatus = ''; setConn('on'); logLine('in', 'connecté (Wi-Fi) à ' + ip); onConnected(); };
   ws.onmessage = (e) => { if (typeof e.data === 'string') handleStatus(e.data); };
-  ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
+  ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; cfg = null; setCfgLocked(true); setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
   ws.onerror   = () => logLine('err', 'erreur WebSocket');
 }
 
@@ -487,7 +488,32 @@ const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb',
 function onCfg(m) {
   if (m.saved) { toast('Enregistré — le module redémarre, reconnectez'); return; }
   cfg = m;
+  setCfgLocked(false);          // config live reçue : le panneau redevient actif
   renderCfg(); applyFlags(cfg);
+}
+// ---------------------------------------------------------------------------
+//  Cohérence hors connexion : sans config live (déconnecté), le panneau Réglages
+//  ne reflète RIEN de réel (cases décochées, boutons inertes). On le verrouille
+//  donc en lecture seule — contrôles désactivés + bandeau — sauf le Journal, qui
+//  reste utile hors ligne. Il se déverrouille à la réception du cfg (onCfg).
+// ---------------------------------------------------------------------------
+let cfgLocked = true;
+function setCfgLocked(locked) {
+  cfgLocked = locked;
+  const sec = $('#tab-cfg'); if (!sec) return;
+  sec.classList.toggle('locked', locked);
+  sec.querySelectorAll('.cfgpage:not([data-subpage="log"]) input, ' +
+                       '.cfgpage:not([data-subpage="log"]) select, ' +
+                       '.cfgpage:not([data-subpage="log"]) button')
+     .forEach((el) => { el.disabled = locked; });
+  updateCfgOffline();
+}
+// Bandeau « hors connexion » : visible si verrouillé, masqué sur le Journal.
+function updateCfgOffline() {
+  const el = $('#cfgOffline'); if (!el) return;
+  const sub = document.querySelector('.subtab.active');
+  const onLog = !!(sub && sub.dataset.sub === 'log');
+  el.classList.toggle('hidden', !(cfgLocked && !onLog));
 }
 function applyFlags(c) {
   for (const [tab, flag] of Object.entries(TAB_FLAGS)) {
@@ -501,9 +527,21 @@ function applyFlags(c) {
     const first = document.querySelector('.tab:not(.hidden)');
     if (first) switchTab(first.dataset.tab); else toggleCfg();
   }
-  $('#pairBox').classList.toggle('hidden', !c.pair);
+  // Sous-onglet « Appairage » des Réglages : visible seulement si le flag pair est actif.
+  const pairSub = document.querySelector('.subtab[data-sub="pair"]');
+  if (pairSub) {
+    pairSub.classList.toggle('hidden', !c.pair);
+    const pairPage = document.querySelector('.cfgpage[data-subpage="pair"]');
+    if (!c.pair && pairPage && pairPage.classList.contains('active')) switchCfgSub('module');
+  }
   // Bouton « Texte » (dans l'onglet Souris) : c'est une fonction clavier.
   $('#btnTextInput').classList.toggle('hidden', !c.hid_kb);
+}
+// Sous-onglets du panneau Réglages (évite de scroller : une section à la fois).
+function switchCfgSub(name) {
+  document.querySelectorAll('.subtab').forEach((t) => t.classList.toggle('active', t.dataset.sub === name));
+  document.querySelectorAll('.cfgpage').forEach((p) => p.classList.toggle('active', p.dataset.subpage === name));
+  updateCfgOffline();
 }
 const MAX_SLAVES = 3;
 function renderCfg() {
@@ -782,14 +820,19 @@ function toggleCfg() {
   const back = document.querySelector(`.tab[data-tab="${lastTab}"]:not(.hidden)`) || document.querySelector('.tab:not(.hidden)');
   switchTab(back ? back.dataset.tab : 'cfg');
 }
+let cssRotated = false;   // repli : rotation CSS forcée (paysage simulé par transform)
 function updateEnv() {
   const coarse = matchMedia('(pointer:coarse)').matches;
-  const landscape = matchMedia('(orientation:landscape)').matches;
+  const physLandscape = matchMedia('(orientation:landscape)').matches;
   const isPhone = coarse && Math.min(screen.width, screen.height) <= 560;
+  // Si l'appareil passe PHYSIQUEMENT en paysage, la rotation CSS forcée n'a plus
+  // lieu d'être : on la retire pour ne pas doubler la rotation.
+  if (cssRotated && physLandscape) { cssRotated = false; document.body.classList.remove('force-rotate'); }
+  const landscape = physLandscape || cssRotated;   // la rotation CSS simule le paysage
   document.body.classList.toggle('is-phone', isPhone);
   document.body.classList.toggle('landscape', landscape);
   document.body.classList.toggle('portrait', !landscape);
-  $('#rotateHint').classList.toggle('hidden', !(isPhone && !landscape));
+  const rot = $('#btnRotate'); if (rot) rot.classList.toggle('active', cssRotated);
   relocateTabs(isPhone && landscape);   // paysage mobile : onglets dans le header
 }
 // Déplace la barre d'onglets dans le header (paysage mobile) ou la remet sous le header.
@@ -811,6 +854,33 @@ async function toggleFullscreen() {
     } else { await document.exitFullscreen(); }
   } catch (e) { toast('Plein écran indisponible'); }
 }
+// Force la rotation en PAYSAGE. Deux niveaux :
+//   1) natif (Android/Chrome) : plein écran + screen.orientation.lock ;
+//   2) REPLI CSS : quand le natif est indisponible ou échoue — cas de l'iPhone
+//      (pas de Web Bluetooth donc transport Wi-Fi, et son WebView/portail captif
+//      n'expose ni Fullscreen ni orientation.lock) — on pivote toute la page de
+//      90° via transform (voir .force-rotate dans style.css). Un 2ᵉ appui annule.
+function setCssRotation(on) {
+  cssRotated = on;
+  document.body.classList.toggle('force-rotate', on);
+  updateEnv();                       // recalcule les classes paysage/portrait + état du bouton
+}
+async function toggleRotation() {
+  if (cssRotated) { setCssRotation(false); return; }         // déjà forcé : on annule
+  const so = screen.orientation;
+  // 1) Essai natif : ne le tente que si TOUTES les briques existent.
+  if (so && so.lock && document.documentElement.requestFullscreen) {
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      const next = (so.type || '').startsWith('landscape') ? 'portrait' : 'landscape';
+      await so.lock(next);
+      return;                        // verrouillage natif OK
+    } catch (e) { /* indisponible/refusé → repli CSS ci-dessous */ }
+  }
+  // 2) Repli CSS (iPhone, portail captif Wi-Fi, plein écran refusé…).
+  setCssRotation(true);
+  toast('Rotation paysage forcée');
+}
 
 // ===========================================================================
 //  Câblage
@@ -818,12 +888,13 @@ async function toggleFullscreen() {
 function wireUI() {
   $('#btnConn').addEventListener('click', onConnClick);
   $('#btnFull').addEventListener('click', toggleFullscreen);
+  $('#btnRotate').addEventListener('click', toggleRotation);
   $('#btnCfg').addEventListener('click', toggleCfg);
-  $('#btnLog').addEventListener('click', () => $('#logDrawer').classList.toggle('hidden'));
-  $('#btnLogClose').addEventListener('click', () => $('#logDrawer').classList.add('hidden'));
   $('#btnLogClear').addEventListener('click', () => { $('#log').innerHTML = ''; });
 
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+  // Sous-onglets du panneau Réglages
+  document.querySelectorAll('.subtab').forEach((s) => s.addEventListener('click', () => switchCfgSub(s.dataset.sub)));
 
   $('#btnMacroSave').addEventListener('click', saveMacro);
 
@@ -915,8 +986,9 @@ function init() {
 
   try { wireUI(); } catch (e) { logLine('err', 'wireUI : ' + e.message); }
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
+  try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v8 (sécurité LESC + passkey/Wi-Fi + renommage des modules) chargé ===');
+  logLine('in', '=== app.js v11 (Réglages verrouillés hors connexion) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

@@ -16,17 +16,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=11" />
 </head>
 <body>
 <div class="app">
 
   <!-- ===================== Barre du haut ===================== -->
   <header class="topbar">
-    <div class="brand"><span class="logo">📡</span><span class="bname">S3-KBD</span></div>
+    <div class="brand"><span class="bname">S3-KBD</span></div>
     <div class="spacer"></div>
     <button id="btnInstall" class="btn primary hidden" title="Installer l'application">⬇ Installer</button>
     <button id="btnFull" class="btn ghost icon" title="Plein écran">⛶</button>
+    <button id="btnRotate" class="btn ghost icon" title="Forcer la rotation (paysage/portrait)">🔄</button>
     <button id="btnCfg" class="btn ghost icon" title="Réglages">⚙️</button>
     <button id="btnConn" class="btn conn primary">Connecter</button>
   </header>
@@ -35,7 +36,6 @@
     ⚠️ Ce navigateur ne supporte pas <b>Web Bluetooth</b>. Utilisez <b>Chrome</b> ou <b>Edge</b>
     (Android ou desktop) via <b>https</b> ou <b>localhost</b>. iOS, Firefox, Safari : exclus. Brave : désactivé par défaut.
   </div>
-  <div id="rotateHint" class="rotate-hint hidden">📱↻ Tournez le téléphone en <b>paysage</b> pour le clavier plein écran</div>
 
   <!-- ===================== Onglets ===================== -->
   <nav class="tabs" id="tabs">
@@ -94,75 +94,106 @@
       <div id="gpioModules"></div>
     </section>
 
-    <!-- Réglages (icône ⚙️ de l'en-tête) : paramètres persistants + appairage + test de liaison -->
-    <section id="tab-cfg" class="tabpage scrollpage">
-      <div class="cfgblock">
-        <h3>Module</h3>
-        <div class="row" style="margin:0 0 8px">
-          <button id="btnLog" class="btn ghost">☰ Journal</button>
-          <span class="hint">Chaque JSON émis et chaque STATUS reçu (outil de validation).</span>
-        </div>
-        <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
-        <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
-        <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
-        <div class="row wrap" style="margin-top:8px">
-          <label>Nom du module <input id="cfgName" type="text" maxlength="19" placeholder="ex. Bureau, Cuisine…"></label>
-          <button id="btnRenameSelf" class="btn primary">Renommer</button>
-          <span class="hint">Nom convivial persistant, pour repérer les modules (annoncé au scan).</span>
-        </div>
-      </div>
+    <!-- Réglages (icône ⚙️ de l'en-tête) : sous-onglets pour éviter le défilement -->
+    <section id="tab-cfg" class="tabpage cfgtab">
+      <nav class="subtabs" id="cfgSubtabs">
+        <button class="subtab active" data-sub="module"><span class="ti">🧩</span><span class="tl">Module</span></button>
+        <button class="subtab" data-sub="secu"><span class="ti">🔒</span><span class="tl">Sécurité</span></button>
+        <button class="subtab" data-sub="feat"><span class="ti">🎚️</span><span class="tl">Fonctions</span></button>
+        <button class="subtab" data-sub="pair"><span class="ti">🔗</span><span class="tl">Appairage</span></button>
+        <button class="subtab" data-sub="log"><span class="ti">📋</span><span class="tl">Journal</span></button>
+      </nav>
 
-      <div class="cfgblock">
-        <h3>Sécurité</h3>
-        <div class="hint">Appairage BLE chiffré (LESC). Passkey par défaut <b>000000</b> — à saisir une fois
-          dans la boîte d'appairage du téléphone/OS (pas dans cette page).</div>
-        <div class="row wrap" style="margin-top:8px">
-          <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
-          <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
-        </div>
-        <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
-          « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
-          <b>Désappairez d'abord tous les esclaves.</b></div>
-        <div class="row wrap" style="margin-top:8px">
-          <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
-          <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
-        </div>
-        <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.</div>
-      </div>
+      <div id="cfgOffline" class="cfg-offline hidden">🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.</div>
 
-      <div class="cfgblock">
-        <h3>Fonctionnalités</h3>
-        <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + saisie Texte</em></label>
-        <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
-        <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>le port USB CDC bascule en mode protocole JSON (au lieu de la console de debug)</em></label>
-        <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
-        <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE</em></label>
-        <div class="row">
-          <span class="hint">Enregistrer <b>redémarre</b> le module (USB ré-énuméré) : reconnectez ensuite.</span>
-          <div class="spacer"></div>
-          <button id="btnCfgSave" class="btn primary">Enregistrer &amp; redémarrer</button>
-        </div>
-      </div>
-
-      <div id="pairBox" class="cfgblock">
-        <h3>Appairage BLE ↔ BLE — étoile (jusqu'à 3 esclaves)</h3>
-        <div id="slaveList" class="scanlist hidden"></div>
-        <div id="scanBox">
-          <div class="row wrap">
-            <button id="btnScan" class="btn primary">Ajouter un esclave (scan)</button>
-            <span class="hint">Scan de 4 s. Le module cible doit être libre (non connecté à un téléphone).</span>
+      <div class="cfgpages">
+        <!-- ---- Sous-onglet : Module ---- -->
+        <div class="cfgpage active" data-subpage="module">
+          <div class="cfgblock">
+            <h3>Module</h3>
+            <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
+            <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
+            <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
+            <div class="row wrap" style="margin-top:8px">
+              <label>Nom du module <input id="cfgName" type="text" maxlength="19" placeholder="ex. Bureau, Cuisine…"></label>
+              <button id="btnRenameSelf" class="btn primary">Renommer</button>
+              <span class="hint">Nom convivial persistant, pour repérer les modules (annoncé au scan).</span>
+            </div>
           </div>
-          <div id="scanList" class="scanlist"></div>
         </div>
-        <div class="row wrap">
-          <label>Test de liaison : <select id="linkTarget"></select></label>
-          <button id="btnLinkTest" class="btn">20 pings</button>
-          <span id="linkTestOut" class="hint">RTT web → module (→ esclave) → web.</span>
+
+        <!-- ---- Sous-onglet : Sécurité ---- -->
+        <div class="cfgpage" data-subpage="secu">
+          <div class="cfgblock">
+            <h3>Sécurité</h3>
+            <div class="hint">Appairage BLE chiffré (LESC). Passkey par défaut <b>000000</b> — à saisir une fois
+              dans la boîte d'appairage du téléphone/OS (pas dans cette page).</div>
+            <div class="row wrap" style="margin-top:8px">
+              <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
+              <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
+            </div>
+            <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
+              « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
+              <b>Désappairez d'abord tous les esclaves.</b></div>
+            <div class="row wrap" style="margin-top:8px">
+              <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
+              <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
+            </div>
+            <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.</div>
+          </div>
         </div>
-        <div class="hint">Le maître injecte clavier/souris localement (id 0) et route les GPIO par id vers l'esclave choisi.
-          Lien d'un esclave coupé → <code>{"err":"nolink"}</code>.</div>
-        <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) sur le maître désappairent toute l'étoile ;
-          sur un esclave, <code>{"t":"pair","a":"reset"}</code> par son port COM le libère.</div>
+
+        <!-- ---- Sous-onglet : Fonctions ---- -->
+        <div class="cfgpage" data-subpage="feat">
+          <div class="cfgblock">
+            <h3>Fonctionnalités</h3>
+            <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + saisie Texte</em></label>
+            <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris</em></label>
+            <label class="switch"><input type="checkbox" data-flag="serial"><span>Port COM (série)</span><em>le port USB CDC bascule en mode protocole JSON (au lieu de la console de debug)</em></label>
+            <label class="switch"><input type="checkbox" data-flag="gpio"><span>GPIO</span><em>onglet GPIO</em></label>
+            <label class="switch"><input type="checkbox" data-flag="pair"><span>Appairage</span><em>scan / appairage BLE ↔ BLE</em></label>
+            <div class="row">
+              <span class="hint">Enregistrer <b>redémarre</b> le module (USB ré-énuméré) : reconnectez ensuite.</span>
+              <div class="spacer"></div>
+              <button id="btnCfgSave" class="btn primary">Enregistrer &amp; redémarrer</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---- Sous-onglet : Appairage ---- -->
+        <div class="cfgpage" data-subpage="pair">
+          <div id="pairBox" class="cfgblock">
+            <h3>Appairage BLE ↔ BLE — étoile (jusqu'à 3 esclaves)</h3>
+            <div id="slaveList" class="scanlist hidden"></div>
+            <div id="scanBox">
+              <div class="row wrap">
+                <button id="btnScan" class="btn primary">Ajouter un esclave (scan)</button>
+                <span class="hint">Scan de 4 s. Le module cible doit être libre (non connecté à un téléphone).</span>
+              </div>
+              <div id="scanList" class="scanlist"></div>
+            </div>
+            <div class="row wrap">
+              <label>Test de liaison : <select id="linkTarget"></select></label>
+              <button id="btnLinkTest" class="btn">20 pings</button>
+              <span id="linkTestOut" class="hint">RTT web → module (→ esclave) → web.</span>
+            </div>
+            <div class="hint">Le maître injecte clavier/souris localement (id 0) et route les GPIO par id vers l'esclave choisi.
+              Lien d'un esclave coupé → <code>{"err":"nolink"}</code>.</div>
+            <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) sur le maître désappairent toute l'étoile ;
+              sur un esclave, <code>{"t":"pair","a":"reset"}</code> par son port COM le libère.</div>
+          </div>
+        </div>
+
+        <!-- ---- Sous-onglet : Journal (ex-tiroir rétractable) ---- -->
+        <div class="cfgpage" data-subpage="log">
+          <div class="row logbar" style="margin:0 0 8px">
+            <b>Journal</b>
+            <span class="hint">Chaque JSON émis et chaque STATUS reçu (outil de validation).</span>
+            <div class="spacer"></div>
+            <button id="btnLogClear" class="btn ghost icon" title="Effacer le journal">🗑️</button>
+          </div>
+          <div id="log" class="log"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -192,16 +223,9 @@
   </div>
 </div>
 
-<!-- Journal (tiroir) -->
-<div id="logDrawer" class="log-drawer hidden">
-  <div class="drawer-head">Journal <button id="btnLogClear" class="btn ghost icon">🗑️</button>
-    <button id="btnLogClose" class="btn ghost icon">✕</button></div>
-  <div id="log" class="log"></div>
-</div>
-
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=8"></script>
-<script src="pwa.js?v=8"></script>
+<script src="app.js?v=11"></script>
+<script src="pwa.js?v=11"></script>
 </body>
 </html>
