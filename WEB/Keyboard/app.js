@@ -575,8 +575,49 @@ function renderCfg() {
   $('#scanBox').classList.toggle('hidden', slave || full);   // esclave : pas de scan ; table pleine : masque
   $('#slaveList').classList.toggle('hidden', cfg.role !== 1);
   renderSlaves();
+  renderModuleRename();
+  renderSec();
   buildLinkTargets();
   buildGpioModules();
+}
+
+// Onglet « Module » : ligne de renommage par carte (maître + esclaves appairés).
+// Le libellé du module local devient « Module Maître » quand role=1, sinon « Module ».
+function renderModuleRename() {
+  const lbl = $('#lblSelfName');
+  if (lbl) lbl.textContent = (cfg && cfg.role === 1) ? 'Module Maître' : 'Module';
+  const box = $('#moduleSlaveList'); if (!box) return;
+  box.innerHTML = '';
+  const slaves = (cfg && cfg.slaves) || [];
+  for (const s of slaves) {                          // rien si aucun esclave
+    const row = document.createElement('div'); row.className = 'renamerow';
+    const lab = document.createElement('span'); lab.className = 'renlabel';
+    lab.textContent = 'Module esclave ' + s.id;
+    const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 19;
+    inp.value = s.name || ''; inp.placeholder = 'esclave ' + s.id;
+    const btn = document.createElement('button'); btn.className = 'btn primary'; btn.textContent = 'Renommer';
+    btn.addEventListener('click', () => send({ t:'name', name: inp.value.trim().slice(0, 19) }, true, s.id));
+    const st = document.createElement('span'); st.className = 'chip led ' + (s.up ? 'on' : 'off');
+    st.textContent = s.up ? 'lié' : 'hs';
+    row.appendChild(lab); row.appendChild(inp); row.appendChild(btn); row.appendChild(st);
+    box.appendChild(row);
+  }
+}
+
+// Onglet « Sécurité » : état « défaut / personnalisée » (jamais la valeur) +
+// masque ••••• dans le champ quand la valeur est personnalisée. Indicateurs
+// pkset/wifiset fournis par le firmware dans la réponse « cfg get ».
+function renderSec() {
+  const pk = !!(cfg && cfg.pkset), wf = !!(cfg && cfg.wifiset);
+  const setState = (el, on, txtOn, txtOff) => {
+    if (!el) return;
+    el.textContent = on ? txtOn : txtOff;
+    el.className = 'chip state ' + (on ? 'custom' : 'def');
+  };
+  setState($('#secPasskeyState'), pk, 'personnalisée', 'défaut');
+  setState($('#secWifiState'),    wf, 'personnalisé',  'défaut');
+  const pkIn = $('#secPasskey'); if (pkIn) pkIn.placeholder = pk ? '••••••'   : '000000';
+  const wfIn = $('#secWifi');    if (wfIn) wfIn.placeholder = wf ? '••••••••' : '≥ 8 caractères';
 }
 
 // Liste des esclaves appairés (maître) : id, MAC, état/RSSI de lien, désappairage par id.
@@ -1000,7 +1041,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v12 (patch souris en rotation CSS) chargé ===');
+  logLine('in', '=== app.js v13 (renommage par module + SSID Wi-Fi + état passkey) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

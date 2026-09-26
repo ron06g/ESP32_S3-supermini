@@ -277,6 +277,22 @@ body.is-phone .subtab { padding:9px 0; }
   margin:0 0 8px; font-weight:700; }
 .kv { display:flex; justify-content:space-between; gap:12px; padding:4px 0; font-size:14px; }
 .kv span { color:var(--text-dim); } .kv b { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
+
+/* ---- Renommage par module (onglet Module) ---- */
+.renamerow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.renamerow .renlabel { min-width:118px; font-weight:600; font-size:14px; }
+.renamerow input { flex:1; min-width:120px; background:var(--bg); color:var(--text);
+  border:1px solid var(--border); border-radius:var(--radius); padding:8px 10px; font-size:15px; }
+.renamerow .chip.led { cursor:default; }
+
+/* ---- Sécurité : groupes BLE / Wi-Fi + séparateur + état ---- */
+.secgroup { margin:4px 0; }
+.sechead { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+.sechead h4 { margin:0; font-size:13px; font-weight:700; color:var(--text); }
+hr.sep { border:none; border-top:1px solid var(--border); margin:14px 0; }
+.chip.state { cursor:default; font-weight:600; }
+.chip.state.custom { background:#123021; border-color:var(--green); color:#b7f0c6; }
+.chip.state.def { background:var(--bg-key); border-color:var(--amber); color:var(--amber); }
 .switch { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); cursor:pointer; }
 .switch:last-of-type { border-bottom:none; }
 .switch input { width:22px; height:22px; accent-color:var(--accent); flex:0 0 auto; }

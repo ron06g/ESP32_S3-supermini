@@ -161,13 +161,16 @@ static void wifiRegisterRoutes() {
 static void wifiPortalBegin() {
   g_statusQueue = xQueueCreate(16, STATUS_MAX);  // 16 statuts de STATUS_MAX octets
 
+  // Le SSID suit le nom convivial du module (comme l'annonce BLE) : renommer le
+  // maître (qui redémarre) renomme donc aussi son réseau Wi-Fi. Défaut « S3-KBD ».
+  const char* apSsid = g_cfg.name[0] ? g_cfg.name : AP_SSID;
   WiFi.mode(WIFI_AP);                             // AP seul (moins de RAM que AP_STA)
   WiFi.softAPConfig(AP_IP, AP_IP, AP_MASK);      // IP/passerelle fixes AVANT softAP
-  bool ok = WiFi.softAP(AP_SSID, g_cfg.apPsk, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
+  bool ok = WiFi.softAP(apSsid, g_cfg.apPsk, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
   WiFi.setSleep(false);                           // pas de modem-sleep : captif + WS réactifs
   WiFi.setTxPower(WIFI_POWER_11dBm);              // conso/chaleur : AP courte portée (tél. en main), ~19->11 dBm
   DBG("[WiFi] SoftAP '%s' %s — IP %s\n",
-                AP_SSID, ok ? "OK" : "ECHEC (cle < 8 car. ?)",
+                apSsid, ok ? "OK" : "ECHEC (cle < 8 car. ?)",
                 WiFi.softAPIP().toString().c_str());
 
   dnsServer.start(DNS_PORT, "*", AP_IP);          // wildcard : tout nom -> 192.168.4.1

@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=12" />
+  <link rel="stylesheet" href="style.css?v=13" />
 </head>
 <body>
 <div class="app">
@@ -110,15 +110,24 @@
         <!-- ---- Sous-onglet : Module ---- -->
         <div class="cfgpage active" data-subpage="module">
           <div class="cfgblock">
-            <h3>Module</h3>
+            <h3>Informations</h3>
             <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
             <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
             <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
-            <div class="row wrap" style="margin-top:8px">
-              <label>Nom du module <input id="cfgName" type="text" maxlength="19" placeholder="ex. Bureau, Cuisine…"></label>
+          </div>
+
+          <div class="cfgblock">
+            <h3>Renommage</h3>
+            <!-- Module local (maître si role=1, sinon « Module ») -->
+            <div class="renamerow">
+              <span id="lblSelfName" class="renlabel">Module</span>
+              <input id="cfgName" type="text" maxlength="19" placeholder="ex. Bureau, Cuisine…">
               <button id="btnRenameSelf" class="btn primary">Renommer</button>
-              <span class="hint">Nom convivial persistant, pour repérer les modules (annoncé au scan).</span>
             </div>
+            <!-- Esclaves appairés (une ligne par esclave), rien si aucun -->
+            <div id="moduleSlaveList"></div>
+            <div class="hint">Nom convivial persistant : repère les modules (annoncé au scan) et sert de
+              <b>SSID Wi-Fi</b> du maître. Renommer le maître le <b>redémarre</b>.</div>
           </div>
         </div>
 
@@ -126,20 +135,34 @@
         <div class="cfgpage" data-subpage="secu">
           <div class="cfgblock">
             <h3>Sécurité</h3>
-            <div class="hint">Appairage BLE chiffré (LESC). Passkey par défaut <b>000000</b> — à saisir une fois
-              dans la boîte d'appairage du téléphone/OS (pas dans cette page).</div>
-            <div class="row wrap" style="margin-top:8px">
-              <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
-              <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
+
+            <!-- ---- Bluetooth (BLE) ---- -->
+            <div class="secgroup">
+              <div class="sechead"><h4>Bluetooth (BLE)</h4><span id="secPasskeyState" class="chip state">–</span></div>
+              <div class="row wrap">
+                <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
+                <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
+              </div>
+              <div class="hint">Passkey par défaut <b>000000</b> — à saisir une fois dans la boîte d'appairage du
+                téléphone/OS (pas dans cette page). Le champ affiche <b>••••••</b> quand elle est personnalisée
+                (la valeur n'est jamais transmise).</div>
+              <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
+                « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
+                <b>Désappairez d'abord tous les esclaves.</b></div>
             </div>
-            <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
-              « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
-              <b>Désappairez d'abord tous les esclaves.</b></div>
-            <div class="row wrap" style="margin-top:8px">
-              <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
-              <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
+
+            <hr class="sep">
+
+            <!-- ---- Wi-Fi (SoftAP) ---- -->
+            <div class="secgroup">
+              <div class="sechead"><h4>Wi-Fi (SoftAP)</h4><span id="secWifiState" class="chip state">–</span></div>
+              <div class="row wrap">
+                <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
+                <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
+              </div>
+              <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.
+                Le champ affiche <b>••••••••</b> quand la clé est personnalisée (jamais transmise en clair).</div>
             </div>
-            <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.</div>
           </div>
         </div>
 
@@ -225,7 +248,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=12"></script>
-<script src="pwa.js?v=12"></script>
+<script src="app.js?v=13"></script>
+<script src="pwa.js?v=13"></script>
 </body>
 </html>
