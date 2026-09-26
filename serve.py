@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===========================================================================
-#  serve.py  —  Serveur HTTPS local (mock) pour le dossier WEB/
+#  serve.py  —  Serveur HTTPS local pour le dossier WEB/
 # ---------------------------------------------------------------------------
 #  - Genere un certificat auto-signe dans WEB/ssl/ s'il manque (avec les IP
 #    du PC en SAN, pour limiter les avertissements).
@@ -61,8 +61,8 @@ def generate_cert():
             pass
 
     subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, u"S3-KBD mock (self-signed)"),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"POC"),
+        x509.NameAttribute(NameOID.COMMON_NAME, u"S3-KBD (self-signed)"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"S3-KBD"),
     ])
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (

@@ -1,5 +1,5 @@
 // ===========================================================================
-//  hid_firmware.ino  —  Lot S3 « HID-Bridge » (MOCK / POC, sans securite)
+//  hid_firmware.ino  —  Lot S3 « HID-Bridge » (clavier + souris HID sans fil)
 // ---------------------------------------------------------------------------
 //  ESP32-S3 (SuperMini) qui est SIMULTANEMENT :
 //    - un clavier USB HID (+ Consumer Control) et une souris, activables
@@ -26,14 +26,13 @@
 //
 //  POURQUOI « CDC On Boot = Disabled » : avec cette option, le coeur appelle
 //  USB.begin() dans app_main(), AVANT setup(). Or les interfaces USB (HID
-//  clavier/souris, 2e CDC) sont choisies d'apres la config NVS lue dans setup()
-//  et doivent etre construites AVANT USB.begin() (le descripteur est fige a ce
-//  moment). Le sketch possede donc lui-meme la console USB (`Console`, CDC 0)
-//  et l'appel a USB.begin() (usbBegin()).
+//  clavier/souris, CDC protocole) sont choisies d'apres la config NVS lue dans
+//  setup() et doivent etre construites AVANT USB.begin() (le descripteur est fige
+//  a ce moment). Le sketch appelle donc lui-meme USB.begin() (usbBegin()).
 //
-//  ATTENTION (socle §7 BadUSB) : ce peripherique EST un injecteur de frappes.
-//  Tant que la securite n'est pas en place, ne le brancher que sur des machines
-//  de confiance.
+//  Le peripherique agit comme un clavier/souris USB : il envoie de vraies frappes
+//  a la machine cible. Comme tout clavier, ne le connecter qu'a des machines de
+//  confiance. CMD exige un lien BLE chiffre + authentifie (garde-fou).
 // ===========================================================================
 
 #include "USB.h"
@@ -72,9 +71,9 @@
 //  Reglages
 // ---------------------------------------------------------------------------
 #define STATUS_MAX 512                              // taille max d'une frame STATUS JSON (cfg + slaves[] + noms). MTU 517 -> tient en 1 PDU
-static const uint16_t KBD_VID = 0x303A;             // Espressif (dev)
-static const uint16_t KBD_PID = 0x8161;             // PID de dev, stable
-static const char*    KBD_PRODUCT = "S3-KBD (mock)";
+static const uint16_t KBD_VID = 0x303A;             // Espressif
+static const uint16_t KBD_PID = 0x8161;             // PID stable
+static const char*    KBD_PRODUCT = "S3-KBD";
 
 static const uint32_t KEY_PRESS_MS   = 5;   // duree appui d'une touche
 static const uint32_t KEY_GAP_MS     = 5;   // repos entre deux frappes
@@ -961,7 +960,7 @@ static void usbBegin() {
   USB.VID(KBD_VID);
   USB.PID(KBD_PID);
   USB.productName(KBD_PRODUCT);
-  USB.manufacturerName("POC");
+  USB.manufacturerName("S3-KBD");
   USB.serialNumber(serial);
   if (g_cfg.hidKb) {                     // clavier construit en premier : protocole boot de l'interface HID
     g_kb = new USBHIDKeyboard();
@@ -1012,7 +1011,7 @@ static bool bleBegin() {
 
   // CMD (canal de frappes) : chiffrement ET authentification MITM exiges
   // (WRITE_AUTHEN). Un pair non appaire (ou en Just Works) ne peut RIEN ecrire
-  // -> garde-fou anti-BadUSB. NB : setAccessPermissions() est un no-op sous
+  // -> garde-fou anti-injection non autorisee. NB : setAccessPermissions() est un no-op sous
   // NimBLE ; ce sont les bits de propriete qui portent l'exigence de securite.
   g_cmdChar = svc->createCharacteristic(
       CMD_UUID,
@@ -1066,7 +1065,7 @@ static bool bleBegin() {
 //  setup / loop
 // ===========================================================================
 void setup() {
-  setCpuFrequencyMhz(160);                       // 240->160 MHz : moitie moins de chaleur CPU, large pour ce POC
+  setCpuFrequencyMhz(160);                       // 240->160 MHz : moitie moins de chaleur CPU, large pour cet usage
 
   // --- LED d'etat (tache dediee) : auto-test puis fond BOOT ---
   ledBegin();
@@ -1084,7 +1083,7 @@ void setup() {
   // --- USB (console + HID clavier / souris + COM selon config), puis USB.begin() ---
   usbBegin();
   delay(300);                                    // laisse l'hote enumerer avant les 1res traces
-  DBGLN("\n[S3-KBD] demarrage (mock)");
+  DBGLN("\n[S3-KBD] demarrage");
   {
     char pm[18] = "-"; if (cfgPeerValid()) cfgMacStr(g_cfg.peer, pm);
     DBG("[CFG] kb=%d ms=%d serial=%d gpio=%d pair=%d role=%s peer=%s\n",

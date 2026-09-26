@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=14" />
+  <link rel="stylesheet" href="style.css?v=15" />
 </head>
 <body>
 <div class="app">
@@ -101,7 +101,6 @@
         <button class="subtab" data-sub="secu"><span class="ti">🔒</span><span class="tl">Sécurité</span></button>
         <button class="subtab" data-sub="feat"><span class="ti">🎚️</span><span class="tl">Fonctions</span></button>
         <button class="subtab" data-sub="pair"><span class="ti">🔗</span><span class="tl">Appairage</span></button>
-        <button class="subtab" data-sub="log"><span class="ti">📋</span><span class="tl">Journal</span></button>
       </nav>
 
       <div id="cfgOffline" class="cfg-offline hidden">🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.</div>
@@ -207,17 +206,6 @@
               sur un esclave, <code>{"t":"pair","a":"reset"}</code> par son port COM le libère.</div>
           </div>
         </div>
-
-        <!-- ---- Sous-onglet : Journal (ex-tiroir rétractable) ---- -->
-        <div class="cfgpage" data-subpage="log">
-          <div class="row logbar" style="margin:0 0 8px">
-            <b>Journal</b>
-            <span class="hint">Chaque JSON émis et chaque STATUS reçu (outil de validation).</span>
-            <div class="spacer"></div>
-            <button id="btnLogClear" class="btn ghost icon" title="Effacer le journal">🗑️</button>
-          </div>
-          <div id="log" class="log"></div>
-        </div>
       </div>
     </section>
   </main>
@@ -249,7 +237,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=14"></script>
-<script src="pwa.js?v=14"></script>
+<script src="app.js?v=15"></script>
+<script src="pwa.js?v=15"></script>
 </body>
 </html>

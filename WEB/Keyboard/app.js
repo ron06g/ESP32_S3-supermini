@@ -1,5 +1,5 @@
 // ===========================================================================
-//  S3-KBD — client Web Bluetooth (mock). Le web envoie l'INTENTION (char/key/…),
+//  S3-KBD — client Web Bluetooth. Le web envoie l'INTENTION (char/key/…),
 //  la traduction AZERTY -> HID est dans le firmware. Contrat GATT : socle §5.
 // ===========================================================================
 const SERVICE_UUID = '9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001';
@@ -526,26 +526,22 @@ function onCfg(m) {
 // ---------------------------------------------------------------------------
 //  Cohérence hors connexion : sans config live (déconnecté), le panneau Réglages
 //  ne reflète RIEN de réel (cases décochées, boutons inertes). On le verrouille
-//  donc en lecture seule — contrôles désactivés + bandeau — sauf le Journal, qui
-//  reste utile hors ligne. Il se déverrouille à la réception du cfg (onCfg).
+//  donc en lecture seule — contrôles désactivés + bandeau. Il se déverrouille à
+//  la réception du cfg (onCfg).
 // ---------------------------------------------------------------------------
 let cfgLocked = true;
 function setCfgLocked(locked) {
   cfgLocked = locked;
   const sec = $('#tab-cfg'); if (!sec) return;
   sec.classList.toggle('locked', locked);
-  sec.querySelectorAll('.cfgpage:not([data-subpage="log"]) input, ' +
-                       '.cfgpage:not([data-subpage="log"]) select, ' +
-                       '.cfgpage:not([data-subpage="log"]) button')
+  sec.querySelectorAll('.cfgpage input, .cfgpage select, .cfgpage button')
      .forEach((el) => { el.disabled = locked; });
   updateCfgOffline();
 }
-// Bandeau « hors connexion » : visible si verrouillé, masqué sur le Journal.
+// Bandeau « hors connexion » : visible tant que le panneau est verrouillé.
 function updateCfgOffline() {
   const el = $('#cfgOffline'); if (!el) return;
-  const sub = document.querySelector('.subtab.active');
-  const onLog = !!(sub && sub.dataset.sub === 'log');
-  el.classList.toggle('hidden', !(cfgLocked && !onLog));
+  el.classList.toggle('hidden', !cfgLocked);
 }
 function applyFlags(c) {
   for (const [tab, flag] of Object.entries(TAB_FLAGS)) {
@@ -868,17 +864,12 @@ function readGpio() {
 }
 
 // ===========================================================================
-//  Journal / toast / util
+//  toast / util
 // ===========================================================================
 function esc(s) { return String(s).replace(/[&<>"]/g, (c2) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c2])); }
-function two(n) { return n < 10 ? '0' + n : '' + n; }
-function logLine(kind, text) {
-  const n = new Date(); const ts = `${two(n.getHours())}:${two(n.getMinutes())}:${two(n.getSeconds())}`;
-  const div = document.createElement('div'); div.className = 'line';
-  const tag = kind === 'out' ? '→' : kind === 'in' ? '←' : '⚠';
-  div.innerHTML = `<span class="t">${ts}</span> <span class="${kind}">${tag} ${esc(text)}</span>`;
-  const box = $('#log'); box.appendChild(div); box.scrollTop = box.scrollHeight;
-}
+// logLine : neutralisé (l'onglet Journal a été retiré). Conservé en no-op pour
+// ne pas toucher aux nombreux appels internes.
+function logLine(/* kind, text */) {}
 let toastTimer = null;
 function toast(msg) {
   const el = $('#toast'); el.textContent = msg; el.classList.remove('hidden');
@@ -973,7 +964,6 @@ function wireUI() {
   $('#btnFull').addEventListener('click', toggleFullscreen);
   $('#btnRotate').addEventListener('click', toggleRotation);
   $('#btnCfg').addEventListener('click', toggleCfg);
-  $('#btnLogClear').addEventListener('click', () => { $('#log').innerHTML = ''; });
 
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
   // Sous-onglets du panneau Réglages
@@ -1071,7 +1061,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v14 (souris fluide sans ACK + sensibilité 15 + tags modes + fix textes) chargé ===');
+  logLine('in', '=== app.js v15 (retrait journal + rebranding + fixes captif/pull-refresh) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

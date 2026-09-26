@@ -1,6 +1,6 @@
 @echo off
 REM ==========================================================================
-REM  serve.bat  —  Lance le serveur HTTPS local du dossier WEB/ (mock).
+REM  serve.bat  —  Lance le serveur HTTPS local du dossier WEB/.
 REM  Genere le certificat auto-signe (WEB\ssl\) au premier lancement.
 REM  Web Bluetooth exige HTTPS ou localhost : ce serveur fournit le HTTPS.
 REM

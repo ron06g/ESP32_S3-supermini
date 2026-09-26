@@ -3,11 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > Projet francophone : le code, les commentaires et la doc sont en français.
-> Statut global : **mock / POC**. **Phase sécurité en cours** : les liaisons BLE
-> sont désormais chiffrées **LESC** (passkey statique, défaut `000000`) et CMD exige
-> l'authentification MITM (voir contrat GATT + section Sécurité). Restent hors
-> périmètre : auth du site web, chiffrement du WebSocket Wi-Fi (seule la WPA2
-> protège l'AP), et le port COM (canal physique de confiance).
+> Sécurité : les liaisons BLE sont chiffrées **LESC** (passkey statique, défaut
+> `000000`) et CMD exige l'authentification MITM (voir contrat GATT + section
+> Sécurité). Hors périmètre actuel : auth du site web, chiffrement du WebSocket
+> Wi-Fi (seule la WPA2 protège l'AP), et le port COM (canal physique de confiance).
 
 ## Ce qu'est le projet
 
@@ -18,8 +17,8 @@ Site web (Web Bluetooth) --BLE/JSON--> ESP32-S3 (firmware) --USB HID--> machine 
    LOT WEB/                              LOT S3/                          PC / TV / borne
 ```
 
-Le périphérique **est** un injecteur de frappes (BadUSB) : ne le brancher que sur
-des machines de confiance tant que la phase sécurité n'est pas faite.
+Le périphérique agit comme un **clavier/souris USB** : il envoie de vraies frappes
+à la machine cible. Comme tout clavier, ne le connecter qu'à des machines de confiance.
 
 ## Commandes
 
@@ -120,7 +119,7 @@ Connections** avec une **passkey statique** (défaut `000000`, redéfinissable v
 DisplayOnly → le téléphone **saisit** la passkey ; esclave = KeyboardOnly → le couple
 maître↔esclave fait un Passkey-Entry MITM **automatique**, les deux auto-injectent la
 passkey partagée). **CMD = WRITE_AUTHEN** (un pair non authentifié ne peut rien
-écrire = garde-fou anti-BadUSB). **Bind = bootstrap Just Works** : le maître se
+écrire = garde-fou anti-injection non autorisée). **Bind = bootstrap Just Works** : le maître se
 connecte au module vierge (les deux DisplayOnly → Just Works chiffré, la passkey n'est
 pas utilisée), écrit l'ordre de provisioning **sur PROV** (mac+id+passkey du maître)
 sur ce lien chiffré, efface le bond bootstrap, reboot ; au régime établi le lien

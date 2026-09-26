@@ -1,10 +1,10 @@
-# Lot S3 — Firmware « HID-Bridge » (mock)
+# Lot S3 — Firmware « HID-Bridge »
 
 Firmware ESP32-S3 qui est **en même temps** un clavier USB HID (AZERTY, +touches
 média) et un serveur BLE recevant les commandes du site web.
 
 > Réalisation du contrat GATT du socle (§5) et de la table AZERTY (spec S3 §6).
-> **Mock, aucune sécurité** — voir l'avertissement BadUSB plus bas.
+> Liaisons BLE chiffrées (LESC) + authentification MITM — voir la section Sécurité plus bas.
 
 ## Fichiers
 
@@ -24,7 +24,7 @@ média) et un serveur BLE recevant les commandes du site web.
 ## Choix d'implémentation
 
 Le socle décrit une cible ESP-IDF (TinyUSB/NimBLE/cJSON) *à titre indicatif*. Ce
-mock est réalisé sous **Arduino-ESP32**, plus rapide à valider et aligné sur le
+Ce firmware est réalisé sous **Arduino-ESP32**, plus rapide à valider et aligné sur le
 code de référence fourni. Les équivalents utilisés :
 
 - USB HID composite (clavier + Consumer Control + souris) → `USBHIDKeyboard` +
@@ -89,7 +89,7 @@ arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default
 
 Au démarrage, le moniteur série (nouveau COM, 115200) affiche l'annonce BLE
 `S3-KBD` et l'état. Le PID énuméré est `1001` (dérivé par le cœur selon les
-interfaces) : sans importance pour le mock.
+interfaces) : sans importance ici.
 
 ## Transport Wi-Fi (résolution A) — évolution
 
@@ -107,8 +107,8 @@ transports enfilent dans la même file, un seul thread touche l'USB.
 python S3/hid_firmware/tools/gen_web_assets.py   # écrit web_assets.h (gzip + routage)
 ```
 
-Test depuis un téléphone : rejoindre le réseau **`S3-KBD`** (clé `apikey00` par
-défaut — **mock, à changer**), accepter le portail captif ; la télécommande
+Test depuis un téléphone : rejoindre le réseau **`S3-KBD`** (clé `12345678` par
+défaut, modifiable dans Réglages → Sécurité), accepter le portail captif ; la télécommande
 s'ouvre en Wi-Fi sur `http://192.168.4.1/Keyboard/`. Le BLE reste utilisable, sans
 redémarrage. Contrainte de plateforme : une page **HTTPS** ne pourrait pas piloter
 `ws://192.168.4.1` (contenu mixte) — d'où l'app servie **en HTTP par le S3**
@@ -202,7 +202,7 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
 Format des commandes : **JSON UTF-8** (socle §5.2). La traduction AZERTY→HID est
 **entièrement côté firmware** ; le web n'envoie que l'intention (`char`/`key`).
 
-## Limites connues (mock)
+## Limites connues
 
 - **Protocole boot / BIOS** : la classe `USBHIDKeyboard` fournit le rapport clavier
   standard 8 octets et fonctionne sous OS. Le fonctionnement *dès le BIOS/UEFI*
@@ -244,16 +244,16 @@ statique** (défaut `000000`, redéfinissable). Points clés (pile **NimBLE**, c
   puis se ré-appairer avec la nouvelle passkey.
 - **Renommage** (`name`) : nom convivial persistant (NVS), annoncé en GAP (repère au
   scan / au ré-appairage) ; conservé au désappairage. Garder des noms **uniques**.
-- **Mot de passe Wi-Fi** (`sec`/`wifi`) : la clé WPA2 du SoftAP est en NVS (ex-`apikey00`
-  en dur). Le WebSocket reste en clair : **seule la WPA2** protège le canal Wi-Fi ; le
+- **Mot de passe Wi-Fi** (`sec`/`wifi`) : la clé WPA2 du SoftAP est en NVS (défaut
+  `12345678`). Le WebSocket reste en clair : **seule la WPA2** protège le canal Wi-Fi ; le
   **port COM** est un canal physique de confiance (non chiffré).
 
 **À valider au matériel** : l'appairage passkey via **Web Bluetooth** (Chrome
 Android/Windows) — l'OS affiche « Saisir le code », pas la page.
 
-## ⚠️ BadUSB
+## ⚠️ À savoir
 
-Ce périphérique **reste** un injecteur de frappes côté **USB** (la cible ne
-distingue pas ce clavier d'un vrai). Le canal BLE est désormais appairé/chiffré,
-mais l'authentification du **site web** et le chiffrement du WebSocket **Wi-Fi**
-restent hors périmètre : brancher de préférence **sur des machines de confiance**.
+Côté **USB**, la cible ne distingue pas ce clavier/souris d'un périphérique réel : il
+envoie de vraies frappes. Le canal BLE est appairé/chiffré (LESC) + authentifié, mais
+l'authentification du **site web** et le chiffrement du WebSocket **Wi-Fi** restent hors
+périmètre : brancher de préférence **sur des machines de confiance**.

@@ -32,10 +32,7 @@
     <p>Clavier et souris USB pilotés en Wi-Fi.<br>Appuyez sur « Accepter » pour ouvrir la télécommande.</p>
 
     <button id="ok" class="btn">Accepter</button>
-    <a id="open" class="link" href="#">Ouvrir dans le navigateur</a>
 
-    <p class="hint" id="ioshint" hidden>Sur iPhone, si la télécommande ne se connecte pas dans cette
-      fenêtre, touchez « Ouvrir dans le navigateur » (Safari).</p>
     <p class="muted" id="info"></p>
   </main>
 
@@ -53,16 +50,8 @@
       return location.protocol + '//' + location.host + '/Keyboard/?D=' + D;
     }
     var okBtn = document.getElementById('ok');
-    var openLink = document.getElementById('open');
-    function refresh() { var u = buildURL(); openLink.href = u; return u; }
-    okBtn.addEventListener('click', function () { location.href = refresh(); });
-    openLink.addEventListener('click', function (e) { e.preventDefault(); location.href = refresh(); });
-    refresh();
+    okBtn.addEventListener('click', function () { location.href = buildURL(); });
     document.getElementById('info').textContent = 'Hôte : ' + location.host;
-    // Indice iOS (mini-navigateur captif restreint).
-    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-      document.getElementById('ioshint').hidden = false;
-    }
   </script>
 </body>
 </html>

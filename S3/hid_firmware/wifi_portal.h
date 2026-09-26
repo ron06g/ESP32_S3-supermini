@@ -1,5 +1,5 @@
 // ============================================================================
-//  wifi_portal.h — Transport Wi-Fi (résolution A), MOCK / POC sans sécurité.
+//  wifi_portal.h — Transport Wi-Fi (résolution A) : SoftAP WPA2 + portail captif.
 // ---------------------------------------------------------------------------
 //  Ajoute, en cohabitation avec le BLE et l'USB HID déjà en place :
 //    - un SoftAP WPA2 « S3-KBD » (IP fixe 192.168.4.1, sans uplink internet) ;
@@ -30,7 +30,7 @@
 #include "web_assets.h"
 
 // ---------------------------------------------------------------------------
-//  Réglages SoftAP (mock : clé WPA2 >= 8 caractères, cf. cahier §6.3)
+//  Réglages SoftAP (clé WPA2 >= 8 caractères, cf. cahier §6.3)
 // ---------------------------------------------------------------------------
 static const char*     AP_SSID   = "S3-KBD";
 // Clé WPA2 : désormais dans la config NVS (g_cfg.apPsk, cf. config.h), modifiable

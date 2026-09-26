@@ -1,4 +1,4 @@
-# Lot WEB — Site « Keyboard » (mock)
+# Lot WEB — Site « Keyboard »
 
 Page **statique** (HTML/CSS/JS, sans build ni dépendance) qui se connecte au
 périphérique S3 en **Web Bluetooth** et lui envoie des commandes clavier.

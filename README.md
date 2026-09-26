@@ -1,6 +1,6 @@
-# Clavier HID piloté à distance — MOCK / POC
+# Clavier HID piloté à distance
 
-Prototype de bout en bout : un **ESP32-S3** branché en USB se fait passer pour un
+Chaîne de bout en bout : un **ESP32-S3** branché en USB se présente comme un
 **clavier/souris AZERTY**, piloté par un **site web** (smartphone Android en
 paysage) qui lui envoie ce qu'il faut taper. Trois canaux de commande possibles —
 **BLE**, **Wi-Fi** ou **port COM** — partageant le **même protocole JSON**.
@@ -11,7 +11,7 @@ paysage) qui lui envoie ce qu'il faut taper. Trois canaux de commande possibles 
    │  (Chrome / │   Wi-Fi (WS)  ─── ► │  ESP32-S3    │ ───────────► │   Cible    │
    │   Android) │ ─────────────── ╱   │  (firmware)  │  frappes     │ PC / TV    │
    └────────────┘   port COM     ╱    └──────┬───────┘              └────────────┘
-      WEB/Keyboard              maître (id 0) = injecteur │ BLE ↔ BLE (étoile, id 1..3)
+      WEB/Keyboard              maître (id 0) = clavier/souris │ BLE ↔ BLE (étoile, id 1..3)
                                                           ▼
                                               ┌──────────────┐   GPIO déportés
                                               │  ESP32-S3    │   (lecture / écriture
@@ -19,10 +19,10 @@ paysage) qui lui envoie ce qu'il faut taper. Trois canaux de commande possibles 
                                               └──────────────┘   … jusqu'à 3 esclaves
 ```
 
-> **Statut : mock, sans aucune sécurité** (ni auth du site, ni appairage chiffré).
-> Reporté en phase sécurité (voir les cahiers des charges dans `ressources/`).
-> ⚠️ Ce périphérique **est** un injecteur de frappes (BadUSB) : ne le brancher que
-> sur des machines de confiance tant que la sécurité n'est pas en place.
+> **Sécurité** : liaisons BLE chiffrées **LESC** + authentification MITM (CMD), Wi-Fi
+> **WPA2**. Hors périmètre actuel : auth du site web et chiffrement du WebSocket Wi-Fi.
+> ⚠️ Le périphérique agit comme un **clavier/souris USB** : il envoie de vraies frappes
+> à la machine cible. Comme tout clavier, ne le connecter qu'à des machines de confiance.
 
 ## État actuel
 
@@ -157,7 +157,7 @@ ou passer par le **Wi-Fi** du S3 (transport WebSocket, pas de certificat requis)
 > le **transport Wi-Fi**. **Brave** : Web Bluetooth désactivé par défaut →
 > préférer **Edge/Chrome**.
 
-## Choix techniques (mock)
+## Choix techniques
 
 - **Arduino-ESP32** plutôt qu'ESP-IDF (plus rapide à valider, aligné sur le code
   de référence fourni). TinyUSB (HID composite), pile BLE (NimBLE), ArduinoJson,

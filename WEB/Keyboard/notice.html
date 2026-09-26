@@ -27,7 +27,7 @@
 
   /* ---------- Hero ---------- */
   header.hero{padding:56px 0 28px; border-bottom:1px solid var(--border); position:relative}
-  .badge-mock{display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600;
+  .badge{display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600;
     color:#ffd7a8; background:rgba(210,153,34,.12); border:1px solid rgba(210,153,34,.4);
     padding:5px 11px; border-radius:999px; letter-spacing:.3px}
   h1{font-size:clamp(32px,5vw,52px); margin:16px 0 6px; letter-spacing:-1px; font-weight:800;
@@ -147,9 +147,9 @@
 
   <!-- ===================== HERO ===================== -->
   <header class="hero">
-    <span class="badge-mock">⚠️ Prototype / POC — sans sécurité (phase ultérieure)</span>
+    <span class="badge">🔒 Liaisons BLE chiffrées (LESC) · Wi-Fi WPA2</span>
     <h1>S3-KBD</h1>
-    <p class="sub">Un <b>pont d'injection HID</b> sur ESP32-S3 : il transforme une intention reçue
+    <p class="sub">Un <b>pont HID clavier + souris</b> sur ESP32-S3 : il transforme une intention reçue
       par <b>BLE</b>, <b>Wi-Fi</b> ou <b>port série</b> en <b>frappes clavier / souris USB</b>.
       En <b>étoile</b>, un module <b>maître</b> injecte lui-même la frappe et <b>route par identifiant</b>
       les commandes GPIO vers <b>jusqu'à 3 esclaves</b> appairés en BLE.</p>
@@ -287,11 +287,11 @@
           <text class="tt" x="105" y="258" text-anchor="middle">Contrôleur</text>
         </g>
 
-        <g class="node hot" data-tip-title="Module MAÎTRE (id 0)" data-tip="Injecteur LOCAL : il tape clavier / souris en USB HID sur SA machine cible. Il ROUTE les commandes id 1-3 vers l'esclave visé et relaie leurs STATUS. Garde BLE + Wi-Fi pour le contrôleur. cfg et pair restent toujours locaux.">
+        <g class="node hot" data-tip-title="Module MAÎTRE (id 0)" data-tip="Clavier/souris LOCAL : il tape en USB HID sur SA machine cible. Il ROUTE les commandes id 1-3 vers l'esclave visé et relaie leurs STATUS. Garde BLE + Wi-Fi pour le contrôleur. cfg et pair restent toujours locaux.">
           <rect x="270" y="190" width="170" height="90" rx="14"/>
           <text class="em" x="355" y="228" text-anchor="middle">📡</text>
           <text class="tt" x="355" y="254" text-anchor="middle">Maître</text>
-          <text class="st" x="355" y="270" text-anchor="middle">id 0 · injecteur + routeur</text>
+          <text class="st" x="355" y="270" text-anchor="middle">id 0 · clavier/souris + routeur</text>
         </g>
 
         <g class="node hot" id="tgt-con" data-tip-title="Machine cible du maître" data-tip="Branchée en USB sur le MAÎTRE : c'est elle qui reçoit les frappes clavier / souris (id 0).">
@@ -358,8 +358,8 @@
   <div class="grid" id="cards"></div>
 
   <footer>
-    S3-KBD — notice technique. Prototype/POC sans sécurité (appairage chiffré et authentification reportés).
-    Le périphérique est un injecteur de frappes : ne le brancher que sur des machines de confiance.
+    S3-KBD — notice technique. Liaisons BLE chiffrées (LESC) + authentification MITM ; Wi-Fi WPA2.
+    Le périphérique agit comme un clavier/souris USB : ne le brancher que sur des machines de confiance.
   </footer>
 </div>
 
@@ -545,7 +545,7 @@ const DATA={
      note:"Le contrôleur choisit son transport (BLE, Wi-Fi ou COM). Le HID part toujours vers la machine cible ; le protocole reste bidirectionnel."}
   ]},
   con:{title:"Mode étoile — maître + 1 à 3 esclaves", cards:[
-    {h:"📡 Maître", role:"id 0 · injecteur local + routeur par id", color:"var(--accent)",
+    {h:"📡 Maître", role:"id 0 · clavier/souris local + routeur par id", color:"var(--accent)",
      fn:[["Clavier HID (local)",F.yes],["Souris HID (local)",F.yes],["Séquences / macros",F.yes],["GPIO local",F.io],["Commande id 1-3",F.route],["cfg / appairage",F.yes]],
      co:[["USB HID → sa cible",F.out],["BLE (contrôleur)",F.yes],["Wi-Fi (SoftAP)",F.yes],["Liens BLE → esclaves (×3)",F.yes],["Port COM (hôte)",F.opt]],
      note:"Le maître (id 0) TAPE lui-même sur sa cible. Une commande id 1-3 est routée vers l'esclave visé ; cfg/pair restent toujours locaux. Lien esclave coupé → err:nolink."},
