@@ -781,6 +781,7 @@ function buildLinkTargets() {
   add(0, (cfg && cfg.name) ? cfg.name + ' (id 0)' : 'Maître (id 0)');
   for (const s of (cfg && cfg.slaves) || []) add(s.id, (s.name || 'Esclave ' + s.id) + ' (id ' + s.id + ')');
   if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
+  renderLinkChart();                 // (ré)affiche le graphe (état vide au départ)
 }
 
 const pendingPings = new Map();       // n -> { t0, resolve, timer }
@@ -800,22 +801,106 @@ function onPong(m) {
   p.resolve(performance.now() - p.t0);
 }
 async function linkTest(N = 20, gapMs = 100) {
-  const out = $('#linkTestOut'), btn = $('#btnLinkTest');
+  const btn = $('#btnLinkTest');
   if (!activeTransport || !activeTransport.connected) { toast('Non connecté'); return; }
-  const id = +($('#linkTarget') ? $('#linkTarget').value : 0);
-  btn.disabled = true; const rtts = [];
+  const sel = $('#linkTarget');
+  const id = +(sel ? sel.value : 0);
+  const name = (sel && sel.selectedOptions[0]) ? sel.selectedOptions[0].textContent : ('id ' + id);
+  // (Re)crée la série de cette cible : relancer un test sur le même module l'écrase,
+  // tester un autre module AJOUTE une courbe sur le même graphe.
+  const s = { name, pts: [] };
+  linkSeries.set(id, s);
+  renderLinkChart();
+  btn.disabled = true;
   for (let i = 0; i < N; i++) {
-    const r = await ping(id); if (r !== null) rtts.push(r);
-    out.textContent = `ping ${i + 1}/${N} — ${r === null ? 'perdu' : r.toFixed(0) + ' ms'}`;
+    s.pts.push(await ping(id));      // RTT (ms) ou null (perdu)
+    renderLinkChart();               // tracé LIVE au fil des pings
     await new Promise((res) => setTimeout(res, gapMs));
   }
   btn.disabled = false;
-  const tgt = id === 0 ? 'maître' : 'esclave ' + id;
-  if (!rtts.length) { out.textContent = `[${tgt}] ${N} pings, 100 % perdus`; return; }
-  const min = Math.min(...rtts), max = Math.max(...rtts), avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-  out.textContent = `[${tgt}] ${rtts.length}/${N} reçus · RTT min ${min.toFixed(0)} / moy ${avg.toFixed(0)} / max ${max.toFixed(0)} ms` +
-    ` · pertes ${(100 * (N - rtts.length) / N).toFixed(0)} %`;
-  logLine('in', 'TEST LIAISON ' + out.textContent);
+}
+
+// ---------------------------------------------------------------------------
+//  Graphe RTT du test de liaison — X = n° de ping, Y = temps (ms).
+//  Une série par module (couleur par id) ; plusieurs modules sur le même graphe.
+// ---------------------------------------------------------------------------
+const linkSeries = new Map();        // id -> { name, pts: [rtt|null, …] }
+const LINK_COLORS = { 0:'#2f81f7', 1:'#3fb950', 2:'#d29922', 3:'#a371f7' };
+function linkColor(id) { return LINK_COLORS[id] || '#8b949e'; }
+function clearLinkChart() { linkSeries.clear(); renderLinkChart(); }
+// Arrondi « joli » du max de l'axe Y.
+function niceCeil(v) {
+  if (v <= 10) return 10;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * p;
+}
+function renderLinkChart() {
+  const box = $('#linkChart'); if (!box) return;
+  const series = [...linkSeries.entries()];
+  const W = 480, H = 240, ML = 42, MR = 10, MT = 10, MB = 30;
+  const plotW = W - ML - MR, plotH = H - MT - MB;
+  let maxN = 1, maxY = 10;
+  for (const [, s] of series) {
+    maxN = Math.max(maxN, s.pts.length);
+    for (const v of s.pts) if (v != null) maxY = Math.max(maxY, v);
+  }
+  maxY = niceCeil(maxY);
+  const xAt = (i) => ML + (maxN <= 1 ? plotW / 2 : (i / (maxN - 1)) * plotW);   // i : index 0-based
+  const yAt = (v) => MT + plotH - (v / maxY) * plotH;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Graphe RTT des pings">`;
+  // Grille + graduations Y
+  const yTicks = 4;
+  for (let t = 0; t <= yTicks; t++) {
+    const v = maxY * t / yTicks, y = yAt(v);
+    svg += `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W - MR}" y2="${y.toFixed(1)}" class="grid"/>`;
+    svg += `<text x="${ML - 6}" y="${(y + 3).toFixed(1)}" class="ylab">${v.toFixed(0)}</text>`;
+  }
+  // Graduations X (n° de ping)
+  const xTicks = Math.min(maxN, 6);
+  for (let t = 0; t < xTicks; t++) {
+    const i = xTicks <= 1 ? 0 : Math.round(t * (maxN - 1) / (xTicks - 1));
+    svg += `<text x="${xAt(i).toFixed(1)}" y="${MT + plotH + 14}" class="xlab">${i + 1}</text>`;
+  }
+  // Axes
+  svg += `<line x1="${ML}" y1="${MT}" x2="${ML}" y2="${MT + plotH}" class="axis"/>`;
+  svg += `<line x1="${ML}" y1="${MT + plotH}" x2="${W - MR}" y2="${MT + plotH}" class="axis"/>`;
+  // Séries : courbe (rupture aux pings perdus) + points
+  for (const [id, s] of series) {
+    const col = linkColor(id);
+    let d = '', started = false, dots = '';
+    s.pts.forEach((v, i) => {
+      if (v == null) { started = false; return; }
+      const x = xAt(i).toFixed(1), y = yAt(v).toFixed(1);
+      d += (started ? ' L' : ' M') + x + ' ' + y; started = true;
+      dots += `<circle cx="${x}" cy="${y}" r="2.2" fill="${col}"/>`;
+    });
+    if (d) svg += `<path d="${d.trim()}" fill="none" stroke="${col}" stroke-width="1.8"/>`;
+    svg += dots;
+  }
+  // Titres d'axes
+  svg += `<text x="${(ML + plotW / 2).toFixed(0)}" y="${H - 4}" class="axtitle" text-anchor="middle">n° de ping</text>`;
+  svg += `<text x="11" y="${(MT + plotH / 2).toFixed(0)}" class="axtitle" text-anchor="middle" transform="rotate(-90 11 ${(MT + plotH / 2).toFixed(0)})">RTT (ms)</text>`;
+  svg += `</svg>`;
+  box.innerHTML = svg;
+  renderLinkLegend(series);
+}
+function renderLinkLegend(series) {
+  const box = $('#linkLegend'); if (!box) return;
+  box.innerHTML = '';
+  if (!series.length) {
+    box.innerHTML = '<span class="hint">Lancez un test : chaque module ajoute une courbe (X = n° de ping, Y = RTT en ms). « Effacer le graphe » réinitialise.</span>';
+    return;
+  }
+  for (const [id, s] of series) {
+    const recv = s.pts.filter((v) => v != null);
+    const n = s.pts.length;
+    const loss = n ? Math.round(100 * (n - recv.length) / n) : 0;
+    const avg = recv.length ? recv.reduce((a, b) => a + b, 0) / recv.length : 0;
+    const el = document.createElement('span'); el.className = 'legitem';
+    el.innerHTML = `<span class="sw" style="background:${linkColor(id)}"></span>${esc(s.name)} · moy ${avg.toFixed(0)} ms · pertes ${loss}%`;
+    box.appendChild(el);
+  }
 }
 
 // ===========================================================================
@@ -996,6 +1081,7 @@ function wireUI() {
   $('#btnCfgSave').addEventListener('click', saveCfg);
   $('#btnScan').addEventListener('click', startScan);
   $('#btnLinkTest').addEventListener('click', () => linkTest());
+  $('#btnLinkClear').addEventListener('click', clearLinkChart);
   $('#btnGpioRead').addEventListener('click', readGpio);
 
   // Nom du module + sécurité (passkey BLE / mot de passe Wi-Fi)
@@ -1068,7 +1154,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v16 (flags BLE/Wi-Fi/BOOT + reset usine + garde-fou comm) chargé ===');
+  logLine('in', '=== app.js v17 (graphe RTT test de liaison) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

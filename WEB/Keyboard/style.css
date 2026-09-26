@@ -306,6 +306,19 @@ hr.sep { border:none; border-top:1px solid var(--border); margin:14px 0; }
 .scanitem .mac { font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--text-dim); font-size:12px; }
 .scanitem .rssi { color:var(--text-dim); font-size:12px; }
 .scanitem .btn { margin-left:auto; }
+/* ---- Graphe RTT du test de liaison ---- */
+.linkchart { margin-top:8px; background:var(--bg); border:1px solid var(--border);
+  border-radius:var(--radius); padding:6px; }
+.linkchart svg { width:100%; height:auto; display:block; }
+.linkchart .grid { stroke:var(--border); stroke-width:1; }
+.linkchart .axis { stroke:var(--text-dim); stroke-width:1; }
+.linkchart .ylab { fill:var(--text-dim); font-size:9px; text-anchor:end; font-family:ui-monospace,Menlo,Consolas,monospace; }
+.linkchart .xlab { fill:var(--text-dim); font-size:9px; text-anchor:middle; font-family:ui-monospace,Menlo,Consolas,monospace; }
+.linkchart .axtitle { fill:var(--text-dim); font-size:10px; }
+.linklegend { display:flex; flex-wrap:wrap; gap:12px; margin-top:6px; font-size:12px; color:var(--text); }
+.legitem { display:inline-flex; align-items:center; gap:6px; }
+.legitem .sw { width:14px; height:3px; border-radius:2px; display:inline-block; flex:0 0 auto; }
+
 .chip.led { border-color:var(--text-dim); }
 .chip.led.on { background:#123021; border-color:var(--green); color:#b7f0c6; }
 .chip.led.off { background:#4a1d1d; border-color:var(--red); color:#ffb4ae; }

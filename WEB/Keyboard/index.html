@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=16" />
+  <link rel="stylesheet" href="style.css?v=17" />
 </head>
 <body>
 <div class="app">
@@ -211,8 +211,10 @@
             <div class="row wrap">
               <label>Test de liaison : <select id="linkTarget"></select></label>
               <button id="btnLinkTest" class="btn">20 pings</button>
-              <span id="linkTestOut" class="hint">RTT web → module (→ esclave) → web.</span>
+              <button id="btnLinkClear" class="btn ghost">Effacer le graphe</button>
             </div>
+            <div id="linkChart" class="linkchart"></div>
+            <div id="linkLegend" class="linklegend"></div>
             <div class="hint">Le maître injecte clavier/souris localement (id 0) et route les GPIO par id vers l'esclave choisi.
               Lien d'un esclave coupé → <code>{"err":"nolink"}</code>.</div>
             <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) sur le maître désappairent toute l'étoile ;
@@ -250,7 +252,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=16"></script>
-<script src="pwa.js?v=16"></script>
+<script src="app.js?v=17"></script>
+<script src="pwa.js?v=17"></script>
 </body>
 </html>
