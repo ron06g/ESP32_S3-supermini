@@ -347,7 +347,19 @@ function initMouse() {
   const pad = $('#trackpad');
   let last = null, accX = 0, accY = 0, timer = null, downT = 0, moved = 0;
   const sens = () => (+$('#mouseSens').value || 8) / 8;
-  const flush = () => { if (accX || accY) { send({ t:'mouse', dx:Math.round(accX), dy:Math.round(accY) }); accX = accY = 0; } timer = null; };
+  const flush = () => {
+    if (accX || accY) {
+      // Repli rotation CSS (paysage logiciel) : le trackpad est pivoté de 90°
+      // (transform matrix rotate(90°) → local (u,v) affiché en (-v,u)), mais
+      // clientX/clientY restent dans le repère PHYSIQUE de l'écran. On repasse
+      // donc les deltas dans le repère perçu : dx = +dYphys, dy = -dXphys.
+      const dx = cssRotated ? accY : accX;
+      const dy = cssRotated ? -accX : accY;
+      send({ t:'mouse', dx:Math.round(dx), dy:Math.round(dy) });
+      accX = accY = 0;
+    }
+    timer = null;
+  };
   pad.addEventListener('pointerdown', (e) => {
     pad.setPointerCapture(e.pointerId); pad.classList.add('active');
     last = { x:e.clientX, y:e.clientY }; downT = Date.now(); moved = 0;
@@ -988,7 +1000,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v11 (Réglages verrouillés hors connexion) chargé ===');
+  logLine('in', '=== app.js v12 (patch souris en rotation CSS) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');
