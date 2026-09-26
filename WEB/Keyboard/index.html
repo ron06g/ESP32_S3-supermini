@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=7" />
+  <link rel="stylesheet" href="style.css?v=8" />
 </head>
 <body>
 <div class="app">
@@ -105,6 +105,29 @@
         <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
         <div class="kv"><span>Rôle</span><b id="cfgRole">–</b></div>
         <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
+        <div class="row wrap" style="margin-top:8px">
+          <label>Nom du module <input id="cfgName" type="text" maxlength="19" placeholder="ex. Bureau, Cuisine…"></label>
+          <button id="btnRenameSelf" class="btn primary">Renommer</button>
+          <span class="hint">Nom convivial persistant, pour repérer les modules (annoncé au scan).</span>
+        </div>
+      </div>
+
+      <div class="cfgblock">
+        <h3>Sécurité</h3>
+        <div class="hint">Appairage BLE chiffré (LESC). Passkey par défaut <b>000000</b> — à saisir une fois
+          dans la boîte d'appairage du téléphone/OS (pas dans cette page).</div>
+        <div class="row wrap" style="margin-top:8px">
+          <label>Passkey BLE <input id="secPasskey" type="text" inputmode="numeric" maxlength="6" placeholder="000000"></label>
+          <button id="btnSecPasskey" class="btn primary">Changer la passkey</button>
+        </div>
+        <div id="secPasskeyHint" class="hint">⚠️ Le module <b>efface ses appairages</b> et redémarre. Ensuite
+          « oubliez » le module dans les réglages Bluetooth du téléphone, puis reconnectez avec la nouvelle passkey.
+          <b>Désappairez d'abord tous les esclaves.</b></div>
+        <div class="row wrap" style="margin-top:8px">
+          <label>Mot de passe Wi-Fi <input id="secWifi" type="text" maxlength="63" placeholder="≥ 8 caractères"></label>
+          <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
+        </div>
+        <div class="hint">Le SoftAP redémarre : reconnectez le téléphone au réseau avec la nouvelle clé.</div>
       </div>
 
       <div class="cfgblock">
@@ -178,7 +201,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=7"></script>
-<script src="pwa.js?v=7"></script>
+<script src="app.js?v=8"></script>
+<script src="pwa.js?v=8"></script>
 </body>
 </html>

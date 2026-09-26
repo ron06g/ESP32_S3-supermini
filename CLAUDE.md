@@ -3,8 +3,11 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > Projet francophone : le code, les commentaires et la doc sont en français.
-> Statut global : **mock / POC, sans aucune sécurité** (ni auth du site, ni
-> appairage BLE chiffré). La sécurité est reportée en phase ultérieure (socle §8).
+> Statut global : **mock / POC**. **Phase sécurité en cours** : les liaisons BLE
+> sont désormais chiffrées **LESC** (passkey statique, défaut `000000`) et CMD exige
+> l'authentification MITM (voir contrat GATT + section Sécurité). Restent hors
+> périmètre : auth du site web, chiffrement du WebSocket Wi-Fi (seule la WPA2
+> protège l'AP), et le port COM (canal physique de confiance).
 
 ## Ce qu'est le projet
 
@@ -90,17 +93,39 @@ USB) est partagé — les deux transports enfilent dans `g_cmdQueue`.
 | Élément | UUID | Propriétés |
 |---|---|---|
 | Service HID-Bridge | `9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001` | — |
-| CMD | `9f1d0001-…-1001` | Write / Write NR |
-| STATUS | `9f1d0002-…-1001` | Notify (frames JSON `{"id":…}`) |
+| CMD | `9f1d0001-…-1001` | Write / Write NR — **WRITE_AUTHEN** (lien chiffré + MITM requis) |
+| STATUS | `9f1d0002-…-1001` | Notify (frames JSON `{"id":…}`) — **READ_ENC** |
+| PROV | `9f1d0003-…-1001` | Write — **WRITE_ENC** ; provisioning d'un esclave, présent uniquement sur un module vierge (`role==STD && pair`) |
 
 Commandes JSON UTF-8 sur CMD, champ `t` : `char` (un caractère, mode direct),
 `txt` (chaîne / macro), `key` (touche nommée / média, action `tap`/`down`/`up`),
 `seq` (séquence prédéfinie `n`, personnalisée `s[]`, ou `stop`), `mouse`
 (déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong`),
 `cfg` (`a`=`get`/`set` : flags persistants, réponse `ev:cfg`, `set` redémarre),
-`pair` (`a`=`scan`/`bind`/`slave`/`unbind`/`reset` : appairage BLE↔BLE), `gpio`
+`pair` (`a`=`scan`/`bind`/`slave`/`unbind`/`reset` : appairage BLE↔BLE ; `bind`
+porte un `name` optionnel = nom annoncé de l'esclave ; `slave` reçu via PROV porte
+la `pk` = passkey du maître), `sec` (`a`=`passkey`/`wifi`/`get` : passkey LESC et
+clé WPA2, **toujours local**, `set` redémarre), `name` (`name` = nom convivial ;
+un module qui se renomme **redémarre** — le nom est aussi l'annonce BLE fixée au
+boot ; routé par `id` vers un esclave, celui-ci **ne redémarre pas**, garde le lien), `gpio`
 (`p` label, `a`=`set`/`clr`/`tgl`/`read`). Masque
 modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
+
+**Sécurité (phase LESC).** Les liaisons BLE sont chiffrées en **LE Secure
+Connections** avec une **passkey statique** (défaut `000000`, redéfinissable via
+`sec`). Réglages : `BLESecurity::setAuthenticationMode(true,true,true)` (bond+MITM+SC)
++ `setPassKey(true, g_cfg.passkey)` + `setCapability` **par rôle** (standard/maître =
+DisplayOnly → le téléphone **saisit** la passkey ; esclave = KeyboardOnly → le couple
+maître↔esclave fait un Passkey-Entry MITM **automatique**, les deux auto-injectent la
+passkey partagée). **CMD = WRITE_AUTHEN** (un pair non authentifié ne peut rien
+écrire = garde-fou anti-BadUSB). **Bind = bootstrap Just Works** : le maître se
+connecte au module vierge (les deux DisplayOnly → Just Works chiffré, la passkey n'est
+pas utilisée), écrit l'ordre de provisioning **sur PROV** (mac+id+passkey du maître)
+sur ce lien chiffré, efface le bond bootstrap, reboot ; au régime établi le lien
+maître↔esclave se ré-appaire en MITM. **Changer la passkey efface les bonds**
+(`ble_store_clear`) — sinon l'ancienne LTK reste valable — et **exige d'abord de
+désappairer tous les esclaves** ; côté téléphone il faut « oublier » le module.
+Le mot de passe Wi-Fi (`apPsk`, ex-`apikey00` en dur) est aussi dans la NVS.
 
 **Champ `id` (routage étoile).** Chaque commande accepte un `id` optionnel
 (**0 = maître/local par défaut**, 1..3 = esclave). Sur un maître, une commande
@@ -112,8 +137,8 @@ local/maître, 1..3 = esclave qui stampe son `selfId` ; le maître **relaie
 verbatim**). Discriminants : `{"id":n,"st":"ready|busy"}` (état ; seul l'id 0 est
 l'« état courant »), `{"id":n,"err":"<code>"}`, ou événements
 `{"id":n,"ev":"cfg|scan|pair|link|gpio|pong",…}` — ex. `{"id":1,"ev":"gpio","p":"4","v":1}`,
-`{"id":2,"ev":"link","up":true}`. Frames jusqu'à **384 octets** (`STATUS_MAX`, le
-`cfg` embarque la table `slaves[]`). Côté firmware, `notifyStatus()` est un
+`{"id":2,"ev":"link","up":true}`. Frames jusqu'à **512 octets** (`STATUS_MAX`, le
+`cfg` embarque la table `slaves[]` + les noms). Côté firmware, `notifyStatus()` est un
 **adaptateur** qui convertit encore les chaînes legacy (`ready`/`err:*`/`gpio:*`…)
 en JSON `{"id":g_myId,…}` et laisse passer une frame déjà JSON (`statusRaw`).
 
@@ -165,9 +190,19 @@ COM d'un esclave le libère. Paramètres et rôle sont en NVS (`config.h`,
   (1 interface HID) + **un** CDC ; le port COM réutilise donc la console. Changer un flag
   USB = sauvegarde NVS + redémarrage ; le numéro de série USB dérive des flags (cache
   descripteur Windows).
-- **`cfg` et `pair` sont toujours locaux** ; sur un maître, une commande `id≠0` est
-  routée vers l'esclave (`id=0`/absent = exécution locale). Le maître **relaie
-  verbatim** les STATUS des esclaves (déjà tagués de leur `selfId`).
+- **`cfg`, `pair` et `sec` sont toujours locaux** ; `name` aussi est traité localement
+  (il gère lui-même son routage maître→esclave pour mettre à jour la table du maître).
+  Pour les autres `t`, sur un maître une commande `id≠0` est routée vers l'esclave
+  (`id=0`/absent = exécution locale). Le maître **relaie verbatim** les STATUS des
+  esclaves (déjà tagués de leur `selfId`).
+- **La sécurité BLE est GLOBALE par module** (une seule iocap `ble_hs_cfg.sm_io_cap`,
+  une seule passkey statique). Tous les `BLESecurity::*` doivent être appelés **après
+  `BLEDevice::init()`** (qui réinitialise `ble_hs_cfg`). `setAccessPermissions()` est
+  un **no-op sous NimBLE** : le chiffrement se déclare par les **bits de propriété**
+  (`PROPERTY_WRITE_AUTHEN`, `PROPERTY_READ_ENC`, `PROPERTY_WRITE_ENC`). Côté client
+  (`ble_link`), appeler **`client->secureConnection()`** après `connect()` **avant**
+  tout `writeValue` (CMD = AUTHEN). L'effacement des bonds (`ble_store_clear` /
+  `ble_gap_unpair`) accompagne tout changement de passkey et tout désappairage.
 - **STOP est hors-file** : détecté dans le callback d'écriture, il vide la file et
   interrompt immédiatement la séquence en cours (`g_stop`) au lieu d'attendre son
   tour ; sur un maître il est **diffusé à TOUS les esclaves** (hors-file des deux côtés).
@@ -178,7 +213,11 @@ COM d'un esclave le libère. Paramètres et rôle sont en NVS (`config.h`,
   serveur BLE Bluedroid, parseur ArduinoJson, dispatch, séquenceur, file/worker).
 - `keymap_azerty.h` : table Unicode → frappe(s) HID (voir invariant ci-dessus).
 - `config.h` : paramètres NVS (`cfg_t g_cfg` : flags, rôle, `selfId` de l'esclave,
-  MAC du maître `peer[]`, table de routage `slaves[MAX_SLAVES]` + helpers de slot).
+  MAC du maître `peer[]`, table de routage `slaves[MAX_SLAVES]` (id↔MAC + `name`) +
+  helpers de slot ; **`passkey`** LESC, **`apPsk`** clé WPA2, **`name`** nom convivial
+  du module (`NAME_MAX`=20) ; helpers `secPasskeyValid`/`secWifiPskValid`/`slaveSetName`).
+  Ajouter un champ à `slave_nv_t` change `sizeof(slaves)` → l'ancien blob NVS est ignoré
+  au 1er boot (table vidée) : un re-flash impose de ré-appairer (acceptable).
 - `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC.
 - `gpio_panel.h` : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11,
   nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`.

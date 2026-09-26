@@ -51,7 +51,9 @@ static USBCDC Console(0);
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-#include <host/ble_gap.h>               // ble_gap_conn_desc (pile NimBLE du coeur 3.x)
+#include <BLESecurity.h>                // LESC : passkey statique, iocap, bonding (NimBLE)
+#include <host/ble_gap.h>               // ble_gap_conn_desc, ble_gap_unpair (pile NimBLE du coeur 3.x)
+#include <host/ble_store.h>             // ble_store_clear (effacement des bonds)
 #include "esp_mac.h"
 #include "esp_heap_caps.h"              // mesures de heap (interne / PSRAM)
 
@@ -63,12 +65,13 @@ static USBCDC Console(0);
 #define SERVICE_UUID  "9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001"
 #define CMD_UUID      "9f1d0001-5b8e-4a4a-9c2a-2b7f3e6a1001"
 #define STATUS_UUID   "9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001"
-#define BLE_NAME      "S3-KBD"          // annonce : S3-KBD-XXYY (2 derniers octets MAC)
+#define PROV_UUID     "9f1d0003-5b8e-4a4a-9c2a-2b7f3e6a1001"   // provisioning d'un esclave (bind)
+#define BLE_NAME      "S3-KBD"          // annonce : nom convivial, sinon S3-KBD-XXYY (2 derniers octets MAC)
 
 // ---------------------------------------------------------------------------
 //  Reglages
 // ---------------------------------------------------------------------------
-#define STATUS_MAX 384                              // taille max d'une frame STATUS JSON (cfg + slaves[])
+#define STATUS_MAX 512                              // taille max d'une frame STATUS JSON (cfg + slaves[] + noms). MTU 517 -> tient en 1 PDU
 static const uint16_t KBD_VID = 0x303A;             // Espressif (dev)
 static const uint16_t KBD_PID = 0x8161;             // PID de dev, stable
 static const char*    KBD_PRODUCT = "S3-KBD (mock)";
@@ -92,6 +95,8 @@ static void releaseAll();
 static void notifyStatus(const char* s);   // adaptateur : texte legacy OU JSON -> diffusion
 static void statusRaw(const char* s);       // diffusion brute d'une frame deja construite (JSON)
 static void rebootWithStatus(const char* s);
+static void secClearBonds();                // efface TOUS les bonds BLE (changement de passkey / reset)
+static void secUnpairMac(const uint8_t* mac);   // efface le bond d'un pair (desappairage d'un esclave)
 
 #include "config.h"                    // parametres NVS (g_cfg)
 
@@ -120,6 +125,7 @@ static USBHIDMouse*           g_mouse = nullptr;
 // ---------------------------------------------------------------------------
 BLECharacteristic* g_cmdChar    = nullptr;
 BLECharacteristic* g_statusChar = nullptr;
+BLECharacteristic* g_provChar   = nullptr;   // provisioning (bind) : présent seulement si role==STD && pair
 BLEServer*         g_server     = nullptr;
 static char        g_bleMac[18] = "";
 
@@ -239,6 +245,28 @@ static void rebootWithStatus(const char* s) {
   vTaskDelay(pdMS_TO_TICKS(300));
   Console.flush();
   ESP.restart();
+}
+
+// ===========================================================================
+//  Securite (phase LESC) — effacement des bonds
+// ---------------------------------------------------------------------------
+//  La LTK d'un bond ne derive PAS de la passkey : changer la passkey n'invalide
+//  aucun bond existant. Il faut donc effacer explicitement les bonds pour que la
+//  nouvelle passkey soit exercee au prochain appairage. API NimBLE directe
+//  (meme pattern que ble_gap_wl_set / ble_gap_conn_rssi ailleurs dans ce sketch).
+// ===========================================================================
+static void secClearBonds() {
+  int rc = ble_store_clear();
+  DBG("[SEC] bonds effaces (rc=%d)\n", rc);
+}
+
+// Efface le bond d'un pair unique (MAC publique en notation aa:bb:..). Utilise au
+// desappairage d'un esclave cote maitre. ble_addr_t.val est en ordre INVERSE.
+static void secUnpairMac(const uint8_t* mac) {
+  ble_addr_t a; a.type = BLE_ADDR_PUBLIC;
+  for (int i = 0; i < 6; i++) a.val[i] = mac[5 - i];
+  int rc = ble_gap_unpair(&a);
+  DBG("[SEC] unpair %02x:%02x:..:%02x rc=%d\n", mac[0], mac[1], mac[5], rc);
 }
 
 // ===========================================================================
@@ -519,6 +547,9 @@ static void statusCfg() {
   d["role"]   = g_cfg.role;
   d["mac"]    = g_bleMac;
   d["self"]   = g_cfg.selfId;
+  d["name"]   = g_cfg.name;                          // nom convivial du module ("" = defaut)
+  d["pkset"]  = g_cfg.passkey ? 1 : 0;               // passkey personnalisee ? (jamais la valeur)
+  d["wifiset"]= (strcmp(g_cfg.apPsk, "apikey00") != 0) ? 1 : 0;   // PSK Wi-Fi personnalise ?
   char peer[18] = "";
   if (cfgPeerValid()) cfgMacStr(g_cfg.peer, peer);   // esclave : MAC de son maitre
   d["peer"]   = peer;
@@ -530,6 +561,7 @@ static void statusCfg() {
     o["id"] = id;
     char m[18]; cfgMacStr(g_cfg.slaves[i].mac, m);
     o["mac"]  = m;
+    o["name"] = g_cfg.slaves[i].name;                // nom convivial de l'esclave ("" = defaut)
     o["up"]   = (g_cfg.role == ROLE_MASTER && g_link[id - 1].up) ? 1 : 0;
     o["rssi"] = (g_cfg.role == ROLE_MASTER) ? g_link[id - 1].rssi : 0;
   }
@@ -554,29 +586,121 @@ static void handleCfg(JsonDocument& doc) {
   statusCfg();
 }
 
+// ===========================================================================
+//  Securite (phase LESC) : {"t":"sec","a":"passkey|wifi|get",...} — TOUJOURS locale
+// ---------------------------------------------------------------------------
+//  passkey : refuse si des esclaves sont appaires (regle) ; sinon ecrit la
+//            nouvelle passkey, EFFACE les bonds (sinon l'ancienne LTK reste
+//            valable) et redemarre. Cote telephone : « oublier » le module.
+//  wifi    : change la cle WPA2 du SoftAP (>= 8 car.) et redemarre.
+//  get     : renvoie SEULEMENT des indicateurs (jamais la passkey ni le PSK).
+// ===========================================================================
+static void handleSec(JsonDocument& doc) {
+  const char* a = doc["a"] | "get";
+  if (!strcmp(a, "passkey")) {
+    if (g_cfg.role == ROLE_MASTER && slaveCount() > 0) { notifyStatus("err:slaves"); return; }
+    long pk = -1;
+    if      (doc["pk"].is<int>())          pk = doc["pk"].as<long>();
+    else if (doc["pk"].is<const char*>())  pk = atol(doc["pk"].as<const char*>());   // "000042" -> 42
+    if (pk < 0 || !secPasskeyValid((uint32_t)pk)) { notifyStatus("err:sec"); return; }
+    g_cfg.passkey = (uint32_t)pk;
+    cfgSave();
+    secClearBonds();                       // force un re-appairage avec la nouvelle passkey
+    DBGLN("[SEC] passkey changee, bonds effaces, redemarrage");
+    rebootWithStatus("{\"id\":0,\"ev\":\"sec\",\"ok\":true}");
+    return;
+  }
+  if (!strcmp(a, "wifi")) {
+    const char* psk = doc["psk"] | "";
+    if (!secWifiPskValid(psk)) { notifyStatus("err:sec"); return; }
+    strlcpy(g_cfg.apPsk, psk, sizeof(g_cfg.apPsk));
+    cfgSave();
+    DBGLN("[SEC] cle Wi-Fi changee, redemarrage");
+    rebootWithStatus("{\"id\":0,\"ev\":\"sec\",\"ok\":true}");
+    return;
+  }
+  char s[80];
+  snprintf(s, sizeof(s), "{\"id\":0,\"ev\":\"sec\",\"pkset\":%d,\"wifiset\":%d}",
+           g_cfg.passkey ? 1 : 0, strcmp(g_cfg.apPsk, "apikey00") ? 1 : 0);
+  statusRaw(s);
+}
+
+// ===========================================================================
+//  Renommage : {"t":"name","name":"…"} — nom convivial persistant.
+// ---------------------------------------------------------------------------
+//  id 0 / absent : renomme CE module. Le nom est AUSSI l'annonce BLE (fixée au
+//                  boot) -> standalone/maître REDÉMARRE (event "reboot":true) pour
+//                  la rafraîchir ; un esclave (rename routé du maître) NE redémarre
+//                  PAS (garder le lien) — son annonce importe peu (whitelist).
+//  maitre + id!=0 : met a jour la table locale (slaves[].name) ET route la
+//                   commande a l'esclave (qui persiste le sien, sans reboot).
+//  Serialisation via ArduinoJson (echappe les caracteres speciaux du nom).
+// ===========================================================================
+static void handleName(JsonDocument& doc) {
+  int id = doc["id"] | 0;
+  const char* nm = doc["name"] | "";
+  if (g_cfg.role == ROLE_MASTER && id != 0) {
+    int idx = slaveIndexById((uint8_t)id);
+    if (id < 1 || id > MAX_SLAVES || idx < 0) { notifyStatus("err:id"); return; }
+    slaveSetName((uint8_t)id, nm);
+    cfgSave();
+    if (linkUp((uint8_t)id)) {                       // repercute chez l'esclave (locale chez lui)
+      JsonDocument fwd; fwd["t"] = "name"; fwd["name"] = g_cfg.slaves[idx].name;
+      char j[96]; serializeJson(fwd, j, sizeof(j));
+      linkForward((uint8_t)id, j, true);
+    }
+    JsonDocument ev; ev["id"] = id; ev["ev"] = "name"; ev["name"] = g_cfg.slaves[idx].name;
+    char s[128]; serializeJson(ev, s, sizeof(s)); statusRaw(s);
+    return;
+  }
+  strlcpy(g_cfg.name, nm, NAME_MAX);
+  cfgSave();
+  JsonDocument ev; ev["id"] = g_myId; ev["ev"] = "name"; ev["name"] = g_cfg.name;
+  // Le nom convivial est AUSSI le nom annoncé en BLE (fixé à bleBegin, donc au
+  // boot). EXCEPTION : un esclave reçoit un rename ROUTÉ de son maître — ne pas
+  // redémarrer (cela casserait le lien) ; son annonce importe peu (whitelist
+  // maître) et le maître garde le nom en cache dans slaves[].
+  char s[128];
+  if (g_cfg.role == ROLE_SLAVE) { serializeJson(ev, s, sizeof(s)); statusRaw(s); return; }
+  // standalone / maître : redémarrer pour que le scan et le sélecteur d'appareil
+  // montrent le nouveau nom annoncé.
+  ev["reboot"] = true;
+  serializeJson(ev, s, sizeof(s));
+  rebootWithStatus(s);
+}
+
 static void handlePair(JsonDocument& doc) {
   const char* a = doc["a"] | "";
   if (!strcmp(a, "scan"))   { linkScan(); return; }
-  if (!strcmp(a, "bind"))   { linkBind(doc["mac"] | ""); return; }
+  if (!strcmp(a, "bind"))   { linkBind(doc["mac"] | "", doc["name"] | ""); return; }
   if (!strcmp(a, "unbind")) { linkUnbind((uint8_t)(doc["id"] | 0)); return; }   // id==0 = tous
-  if (!strcmp(a, "slave")) {                       // ordre recu du futur maitre (+ id attribue)
+  if (!strcmp(a, "slave")) {                       // ordre de provisioning recu du futur maitre (via PROV)
     uint8_t m[6];
     if (!g_cfg.pair || g_cfg.role == ROLE_MASTER || !cfgParseMac(doc["mac"] | "", m)) { notifyStatus("err:pair"); return; }
     memcpy(g_cfg.peer, m, 6);
     g_cfg.role   = ROLE_SLAVE;
     g_cfg.selfId = (uint8_t)(doc["id"] | 1);       // id sous lequel le maitre me verra
+    long pk = doc["pk"].is<int>() ? doc["pk"].as<long>() : -1;   // passkey PARTAGEE du maitre
+    if (pk >= 0 && secPasskeyValid((uint32_t)pk)) g_cfg.passkey = (uint32_t)pk;
     cfgSave();
-    DBG("[PAIR] esclave id=%u de %s, redemarrage\n", g_cfg.selfId, (const char*)(doc["mac"] | ""));
+    // NB : on N'efface PAS les bonds ici (le lien bootstrap est encore actif et
+    // porte l'ack). Au reboot, le maitre a deja efface SON bond (linkBind) et
+    // reinitie un pairing MITM neuf ; le bond bootstrap obsolete cote esclave est
+    // alors remplace via REPEAT_PAIRING. Pas de risque de bond « Just Works » residuel.
+    DBG("[PAIR] esclave id=%u de %s, passkey recue, redemarrage\n", g_cfg.selfId, (const char*)(doc["mac"] | ""));
     rebootWithStatus("pair:ok");
     return;
   }
-  if (!strcmp(a, "reset")) {                       // retour au mode standard (aussi via COM)
-    g_cfg.role   = ROLE_STD;
-    g_cfg.selfId = 0;
+  if (!strcmp(a, "reset")) {                       // retour au mode standard (aussi via COM / 5xBOOT)
+    g_cfg.role    = ROLE_STD;
+    g_cfg.selfId  = 0;
+    g_cfg.passkey = 0;                             // passkey usine 000000
     memset(g_cfg.peer, 0, 6);
     memset(g_cfg.slaves, 0, sizeof(g_cfg.slaves));
+    // g_cfg.name CONSERVE : repere pour un futur re-appairage manuel.
     cfgSave();
-    DBGLN("[PAIR] reset -> mode standard, redemarrage");
+    secClearBonds();                               // libere aussi les bonds
+    DBGLN("[PAIR] reset -> mode standard (nom conserve), redemarrage");
     rebootWithStatus("pair:ok");
     return;
   }
@@ -593,9 +717,14 @@ static void processCommand(const char* json) {
 
   const char* t = doc["t"] | "";
 
-  // --- Toujours locales, quel que soit l'id : cfg / pair ---
+  // --- Toujours locales, quel que soit l'id : cfg / pair / sec / name ---
+  //     (name gere lui-meme le routage maitre->esclave : ne pas le laisser au
+  //      routage verbatim generique ci-dessous, qui ne mettrait pas a jour la
+  //      table locale du maitre.)
   if (!strcmp(t, "cfg"))  { handleCfg(doc);  return; }
   if (!strcmp(t, "pair")) { handlePair(doc); return; }
+  if (!strcmp(t, "sec"))  { handleSec(doc);  return; }
+  if (!strcmp(t, "name")) { handleName(doc); return; }
 
   // --- Routage par id : 0 = cette carte (maitre/standard/esclave local),
   //     1..MAX_SLAVES = esclave route par le maitre. id absent => 0. ---
@@ -809,6 +938,16 @@ class CmdCB : public BLECharacteristicCallbacks {
   }
 };
 
+// PROV : canal de provisioning d'un esclave (bind). Chiffrement ENC seul (un
+// bootstrap Just Works le satisfait), present uniquement sur un module vierge
+// (role==STD && pair). Ne recoit que l'ordre {"t":"pair","a":"slave",...} : on
+// l'enfile comme une commande normale (handlePair est local, le worker execute).
+class ProvCB : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    enqueueCommand(c->getData(), c->getLength());
+  }
+};
+
 // ===========================================================================
 //  Init USB : interfaces selon la config (construites AVANT USB.begin()).
 //  Exige « USB CDC On Boot = Disabled » (sinon le coeur a deja appele
@@ -843,10 +982,23 @@ static void usbBegin() {
 static bool bleBegin() {
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_BT);
-  char name[24];
-  snprintf(name, sizeof(name), "%s-%02X%02X", BLE_NAME, mac[4], mac[5]);
+  // Nom annonce : nom convivial si defini (repere au scan / au ré-appairage),
+  // sinon defaut S3-KBD-XXYY (2 derniers octets MAC). Garder des noms UNIQUES.
+  char name[32];
+  if (g_cfg.name[0]) strlcpy(name, g_cfg.name, sizeof(name));
+  else               snprintf(name, sizeof(name), "%s-%02X%02X", BLE_NAME, mac[4], mac[5]);
 
   BLEDevice::init(name);
+
+  // --- Securite LESC (APRES init : init() reinitialise ble_hs_cfg) ---
+  //  bonding + MITM + Secure Connections ; passkey statique auto-injectee.
+  //  iocap GLOBALE par role : standard/maitre = DisplayOnly (le telephone SAISIT
+  //  la passkey ; l'esclave l'auto-injecte cote lien) ; esclave = KeyboardOnly
+  //  -> couple maitre(Display)/esclave(Keyboard) = Passkey-Entry MITM automatique.
+  BLESecurity::setAuthenticationMode(true, true, true);          // bond, mitm, sc
+  BLESecurity::setCapability(g_cfg.role == ROLE_SLAVE ? ESP_IO_CAP_IN : ESP_IO_CAP_OUT);
+  BLESecurity::setPassKey(true, g_cfg.passkey);                  // statique (0 = 000000)
+
   // Conso/chaleur : en mode standard (telephone a courte portee) on baisse la
   // puissance BLE ; en appaire (maitre/esclave) le lien BLE<->BLE reste a fond.
   if (g_cfg.role == ROLE_STD) BLEDevice::setPower(ESP_PWR_LVL_N0);   // 0 dBm : couvre une piece
@@ -859,15 +1011,33 @@ static bool bleBegin() {
 
   BLEService* svc = g_server->createService(SERVICE_UUID);
 
+  // CMD (canal de frappes) : chiffrement ET authentification MITM exiges
+  // (WRITE_AUTHEN). Un pair non appaire (ou en Just Works) ne peut RIEN ecrire
+  // -> garde-fou anti-BadUSB. NB : setAccessPermissions() est un no-op sous
+  // NimBLE ; ce sont les bits de propriete qui portent l'exigence de securite.
   g_cmdChar = svc->createCharacteristic(
       CMD_UUID,
-      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+      | BLECharacteristic::PROPERTY_WRITE_AUTHEN);
   g_cmdChar->setCallbacks(new CmdCB());
 
+  // STATUS : notify, lecture/souscription chiffree (READ_ENC) -> l'abonnement
+  // CCCD declenche l'appairage si le lien n'est pas chiffre.
   g_statusChar = svc->createCharacteristic(
-      STATUS_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+      STATUS_UUID,
+      BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ_ENC);
   g_statusChar->addDescriptor(new BLE2902());
   g_statusChar->setValue("{\"id\":0,\"st\":\"ready\"}");   // valeur initiale (frame JSON)
+
+  // PROV : provisioning d'un esclave. Present UNIQUEMENT sur un module vierge et
+  // disponible (role STD + pair). WRITE_ENC : un bootstrap Just Works suffit (le
+  // maitre s'appaire avant d'ecrire) -> la passkey poussee circule sur lien chiffre.
+  if (g_cfg.role == ROLE_STD && g_cfg.pair) {
+    g_provChar = svc->createCharacteristic(
+        PROV_UUID,
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_ENC);
+    g_provChar->setCallbacks(new ProvCB());
+  }
 
   svc->start();
 

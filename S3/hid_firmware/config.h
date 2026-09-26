@@ -8,7 +8,16 @@
 //  Clés NVS (namespace "s3kbd") : kb, ms, ser, gpio, pair (uchar 0/1),
 //  role (uchar : 0 standard, 1 maître, 2 esclave), peer (6 octets = MAC BLE
 //  du maître, sur un esclave), self (uchar = id attribué à l'esclave par son
-//  maître), slaves (blob = table de routage id↔MAC du maître).
+//  maître), slaves (blob = table de routage id↔MAC + nom du maître),
+//  pk (uint32 = passkey LESC statique, 0 = 000000), wpsk (chaîne = clé WPA2 du
+//  SoftAP), nm (chaîne = nom convivial du module).
+//
+//  SÉCURITÉ (phase LESC). La passkey statique `passkey` sert :
+//    - à l'appairage téléphone↔module (l'utilisateur la saisit) ;
+//    - au lien maître↔esclave (partagée : le maître la pousse à l'esclave au bind).
+//  Elle NE circule jamais en clair (bind = lien chiffré Just Works, cf. ble_link.h).
+//  Le mot de passe Wi-Fi `apPsk` sort du code en dur (wifi_portal.h). Changer la
+//  passkey impose de désappairer tous les esclaves (règle) et efface les bonds.
 //
 //  Étoile multi-esclaves : le MAÎTRE (id 0) route par `id` vers ses esclaves
 //  (id 1..MAX_SLAVES). Table `slaves[]` = (id, MAC) persistée. Un esclave garde
@@ -27,21 +36,30 @@ enum : uint8_t { ROLE_STD = 0, ROLE_MASTER = 1, ROLE_SLAVE = 2 };
 // (ne consomment pas de connexion BLE) -> les 3 connexions vont aux esclaves.
 #define MAX_SLAVES 3
 
+// Longueur max d'un nom convivial (octets, \0 compris). Cap volontairement bas
+// pour tenir dans STATUS_MAX quand `cfg get` sérialise le nom du module + celui
+// de chaque esclave (cf. hid_firmware.ino, budget STATUS_MAX).
+#define NAME_MAX 20
+
 struct slave_nv_t {
-  uint8_t id;        // 1..MAX_SLAVES ; 0 = slot libre
-  uint8_t mac[6];    // MAC BLE de l'esclave
+  uint8_t id;             // 1..MAX_SLAVES ; 0 = slot libre
+  uint8_t mac[6];         // MAC BLE de l'esclave
+  char    name[NAME_MAX]; // nom convivial de l'esclave (vu du maître), "" si aucun
 };
 
 struct cfg_t {
-  bool    hidKb;     // clavier HID (+ Consumer Control)
-  bool    hidMs;     // souris HID
-  bool    serial;    // 2e port COM (CDC) parlant le protocole
-  bool    gpio;      // panneau GPIO
-  bool    pair;      // appairage autorisé (scan / bind / slave)
-  uint8_t role;      // ROLE_*
-  uint8_t peer[6];   // esclave : MAC de son maître (whitelist). Inutilisé ailleurs.
-  uint8_t selfId;    // esclave : id attribué par le maître (0 sinon)
-  slave_nv_t slaves[MAX_SLAVES];   // maître : table de routage id↔MAC
+  bool     hidKb;    // clavier HID (+ Consumer Control)
+  bool     hidMs;    // souris HID
+  bool     serial;   // 2e port COM (CDC) parlant le protocole
+  bool     gpio;     // panneau GPIO
+  bool     pair;     // appairage autorisé (scan / bind / provisioning)
+  uint8_t  role;     // ROLE_*
+  uint8_t  peer[6];  // esclave : MAC de son maître (whitelist). Inutilisé ailleurs.
+  uint8_t  selfId;   // esclave : id attribué par le maître (0 sinon)
+  uint32_t passkey;  // passkey LESC statique (0 = 000000 par défaut)
+  char     apPsk[64];      // clé WPA2 du SoftAP (8..63 car.)
+  char     name[NAME_MAX]; // nom convivial de CE module ("" = défaut S3-KBD-XXYY)
+  slave_nv_t slaves[MAX_SLAVES];   // maître : table de routage id↔MAC(+nom)
 };
 
 static cfg_t g_cfg;
@@ -58,13 +76,23 @@ static void cfgLoad() {
   g_cfg.pair   = p.getUChar("pair", 1) != 0;
   g_cfg.role   = p.getUChar("role", ROLE_STD);
   g_cfg.selfId = p.getUChar("self", 0);
+  g_cfg.passkey = p.getUInt("pk", 0);                    // 0 = 000000 par défaut
+  memset(g_cfg.apPsk, 0, sizeof(g_cfg.apPsk));
+  if (p.getString("wpsk", g_cfg.apPsk, sizeof(g_cfg.apPsk)) == 0)
+    strlcpy(g_cfg.apPsk, "apikey00", sizeof(g_cfg.apPsk));   // défaut historique
+  memset(g_cfg.name, 0, sizeof(g_cfg.name));
+  p.getString("nm", g_cfg.name, sizeof(g_cfg.name));     // "" si absent
   memset(g_cfg.peer, 0, 6);
   if (p.getBytesLength("peer") == 6) p.getBytes("peer", g_cfg.peer, 6);
   memset(g_cfg.slaves, 0, sizeof(g_cfg.slaves));
+  // NB : ajouter un champ à slave_nv_t change sizeof(slaves) -> l'ancien blob
+  // (firmware antérieur) est ignoré au 1er boot, la table repart vide. Sans
+  // conséquence : un changement de sécurité impose de toute façon un ré-appairage.
   if (p.getBytesLength("slaves") == sizeof(g_cfg.slaves))
     p.getBytes("slaves", g_cfg.slaves, sizeof(g_cfg.slaves));
   p.end();
   if (g_cfg.role > ROLE_SLAVE) g_cfg.role = ROLE_STD;
+  if (g_cfg.passkey > 999999)  g_cfg.passkey = 0;        // garde-fou (6 chiffres)
 }
 
 static void cfgSave() {
@@ -77,6 +105,9 @@ static void cfgSave() {
   p.putUChar("pair", g_cfg.pair   ? 1 : 0);
   p.putUChar("role", g_cfg.role);
   p.putUChar("self", g_cfg.selfId);
+  p.putUInt("pk", g_cfg.passkey);
+  p.putString("wpsk", g_cfg.apPsk);
+  p.putString("nm", g_cfg.name);
   p.putBytes("peer", g_cfg.peer, 6);
   p.putBytes("slaves", g_cfg.slaves, sizeof(g_cfg.slaves));
   p.end();
@@ -149,6 +180,27 @@ static bool slaveRemove(uint8_t id) {
   if (i < 0) return false;
   memset(&g_cfg.slaves[i], 0, sizeof(slave_nv_t));
   return true;
+}
+
+// Enregistre (dans la table du maître) le nom convivial de l'esclave `id`.
+// Ne persiste pas ici : l'appelant fait cfgSave(). false si id inconnu.
+static bool slaveSetName(uint8_t id, const char* name) {
+  int i = slaveIndexById(id);
+  if (i < 0) return false;
+  strlcpy(g_cfg.slaves[i].name, name ? name : "", NAME_MAX);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+//  Sécurité (phase LESC) — helpers de validation
+// ---------------------------------------------------------------------------
+// Passkey BLE : entier 6 chiffres (000000..999999).
+static bool secPasskeyValid(uint32_t pk) { return pk <= 999999; }
+// Clé WPA2 : 8..63 caractères ASCII imprimables.
+static bool secWifiPskValid(const char* s) {
+  if (!s) return false;
+  size_t n = strlen(s);
+  return n >= 8 && n <= 63;
 }
 
 // NB : la sérialisation JSON de la config (réponse à cfg get) est dans

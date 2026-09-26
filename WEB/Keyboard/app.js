@@ -107,6 +107,8 @@ function handleStatus(text) {
       case 'link': onLink(m); return;
       case 'gpio': onGpio(m); return;
       case 'pong': onPong(m); return;
+      case 'sec':  onSec(m);  return;
+      case 'name': onName(m); return;
     }
     return;
   }
@@ -508,7 +510,13 @@ function renderCfg() {
   document.querySelectorAll('input[data-flag]').forEach((i) => { i.checked = !!cfg[i.dataset.flag]; });
   $('#cfgMac').textContent = cfg.mac || '–';
   $('#cfgRole').textContent = ROLE_NAMES[cfg.role] || cfg.role;
+  if ($('#cfgName')) $('#cfgName').value = cfg.name || '';
   const slaves = cfg.slaves || [];
+  // Sécurité : on ne peut changer la passkey que sans esclave appairé (sinon il
+  // faudrait tout ré-appairer). On désactive le bouton et on explicite pourquoi.
+  const hasSlaves = cfg.role === 1 && slaves.length > 0;
+  if ($('#btnSecPasskey')) $('#btnSecPasskey').disabled = hasSlaves;
+  if ($('#secPasskeyHint')) $('#secPasskeyHint').classList.toggle('warn', hasSlaves);
   let peerTxt = '–';
   if (cfg.role === 2)      peerTxt = 'maître ' + (cfg.peer || '?') + ' — je suis id ' + (cfg.self || '?');
   else if (cfg.role === 1) peerTxt = slaves.length + ' esclave(s) sur ' + MAX_SLAVES;
@@ -530,15 +538,21 @@ function renderSlaves() {
   if (!slaves.length) { box.innerHTML = '<div class="empty">Aucun esclave appairé. Utilisez « Ajouter un esclave ».</div>'; return; }
   for (const s of slaves) {
     const el = document.createElement('div'); el.className = 'scanitem';
-    el.innerHTML = `<b>Esclave ${s.id}</b><span class="mac">${esc(s.mac)}</span>` +
+    const label = s.name ? esc(s.name) + ' <small>(id ' + s.id + ')</small>' : 'Esclave ' + s.id;
+    el.innerHTML = `<b>${label}</b><span class="mac">${esc(s.mac)}</span>` +
       `<span class="chip led ${s.up ? 'on' : 'off'}">${s.up ? 'lié' : 'coupé'}</span>` +
       `<span class="rssi">${s.up ? esc(s.rssi) + ' dBm' : '–'}</span>`;
+    const rn = document.createElement('button'); rn.className = 'btn ghost'; rn.textContent = '✏️'; rn.title = 'Renommer';
+    rn.addEventListener('click', () => {
+      const nm = prompt('Nom de l\'esclave ' + s.id + ' :', s.name || '');
+      if (nm !== null) send({ t:'name', name: nm.trim().slice(0, 19) }, true, s.id);
+    });
     const b = document.createElement('button'); b.className = 'btn danger'; b.textContent = 'Désappairer';
     b.addEventListener('click', () => {
-      if (!confirm('Désappairer l\'esclave ' + s.id + ' ? Il revient en mode standard, le maître redémarre.')) return;
+      if (!confirm('Désappairer ' + (s.name || 'l\'esclave ' + s.id) + ' ? Il revient en mode standard (nom conservé), le maître redémarre.')) return;
       send({ t:'pair', a:'unbind', id:s.id }, true);
     });
-    el.appendChild(b); box.appendChild(el);
+    el.appendChild(rn); el.appendChild(b); box.appendChild(el);
   }
 }
 function saveCfg() {
@@ -564,7 +578,10 @@ function onScan(m) {
   b.disabled = already;
   b.addEventListener('click', () => {
     if (!confirm('Ajouter ' + (m.name || m.mac) + ' comme ESCLAVE de ce module ?\nLe module redémarre.')) return;
-    b.disabled = true; send({ t:'pair', a:'bind', mac:m.mac }, true);
+    // On transmet le nom annoncé : le maître le met en cache (affichage + repère
+    // au ré-appairage). Un nom « S3-KBD-XXYY » par défaut n'est pas un nom convivial.
+    const nm = (m.name && !/^S3-KBD-/.test(m.name)) ? m.name : '';
+    b.disabled = true; send({ t:'pair', a:'bind', mac:m.mac, name:nm }, true);
   });
   el.appendChild(b); list.appendChild(el);
 }
@@ -574,6 +591,50 @@ function startScan() {
   setTimeout(() => { $('#btnScan').disabled = false; }, 8000);   // filet si scan done n'arrive pas
 }
 function onPair(m) { toast(m.ok ? 'Appairage : OK — redémarrage' : 'Appairage : échec'); }
+
+// ===========================================================================
+//  Sécurité (LESC) : changer la passkey BLE / le mot de passe Wi-Fi.
+//  La saisie de la passkey à l'appairage se fait dans la boîte de l'OS, pas ici.
+// ===========================================================================
+function onSec(m) {
+  if (m.ok) { toast('Sécurité enregistrée — le module redémarre, reconnectez'); return; }
+  if (cfg) { cfg.pkset = m.pkset; cfg.wifiset = m.wifiset; }   // indicateurs (jamais les valeurs)
+}
+function changePasskey() {
+  if (cfg && cfg.role === 1 && (cfg.slaves || []).length > 0) {
+    toast('Désappairez d\'abord tous les esclaves'); return;
+  }
+  const v = ($('#secPasskey').value || '').trim();
+  if (!/^[0-9]{6}$/.test(v)) { toast('Passkey = 6 chiffres (ex. 000000)'); return; }
+  if (!confirm('Changer la passkey en ' + v + ' ?\nLe module efface ses appairages et redémarre.\n' +
+               'Pensez à « oublier » le module dans les réglages Bluetooth du téléphone.')) return;
+  send({ t:'sec', a:'passkey', pk:v }, true);
+  $('#secPasskey').value = '';
+}
+function changeWifi() {
+  const v = $('#secWifi').value || '';
+  if (v.length < 8 || v.length > 63) { toast('Mot de passe Wi-Fi : 8 à 63 caractères'); return; }
+  if (!confirm('Changer le mot de passe Wi-Fi ?\nLe SoftAP redémarre, reconnectez le téléphone.')) return;
+  send({ t:'sec', a:'wifi', psk:v }, true);
+  $('#secWifi').value = '';
+}
+
+// ===========================================================================
+//  Renommage des modules (nom convivial persistant)
+// ===========================================================================
+function onName(m) {
+  if (!cfg) return;
+  if (!m.id) { cfg.name = m.name || ''; if ($('#cfgName')) $('#cfgName').value = cfg.name; }
+  else { const s = (cfg.slaves || []).find((x) => x.id === m.id); if (s) s.name = m.name || ''; }
+  renderSlaves(); buildLinkTargets(); buildGpioModules();
+  // Le nom est aussi l'annonce BLE : renommer un module (hors esclave routé) le
+  // fait redémarrer pour rafraîchir l'annonce (visible au scan / sélecteur OS).
+  toast(m.reboot ? 'Renommé — le module redémarre, reconnectez' : 'Nom enregistré');
+}
+function renameModule() {
+  const nm = ($('#cfgName').value || '').trim().slice(0, 19);
+  send({ t:'name', name: nm }, true);
+}
 // Événement de lien maître→esclave : met à jour l'entrée cfg.slaves[id] et réaffiche.
 function onLink(m) {
   if (!cfg || !cfg.slaves) return;
@@ -593,8 +654,8 @@ function buildLinkTargets() {
   const prev = sel.value;
   sel.innerHTML = '';
   const add = (id, label) => { const o = document.createElement('option'); o.value = id; o.textContent = label; sel.appendChild(o); };
-  add(0, 'Maître (id 0)');
-  for (const s of (cfg && cfg.slaves) || []) add(s.id, 'Esclave ' + s.id);
+  add(0, (cfg && cfg.name) ? cfg.name + ' (id 0)' : 'Maître (id 0)');
+  for (const s of (cfg && cfg.slaves) || []) add(s.id, (s.name || 'Esclave ' + s.id));
   if (prev && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev;
 }
 
@@ -641,8 +702,8 @@ const GPIO_OUT = ['4', '5', '6', '7'];
 const GPIO_IN  = ['BOOT', '8', '9', '10', '11'];
 // Liste des cartes à afficher : maître (id 0) + esclaves appairés.
 function moduleList() {
-  const mods = [{ id:0, name:'Maître (id 0)' }];
-  for (const s of (cfg && cfg.slaves) || []) mods.push({ id:s.id, name:'Esclave ' + s.id });
+  const mods = [{ id:0, name:(cfg && cfg.name) || 'Maître (id 0)' }];
+  for (const s of (cfg && cfg.slaves) || []) mods.push({ id:s.id, name:(s.name || 'Esclave ' + s.id) });
   return mods;
 }
 // Une SECTION GPIO par module, toutes affichées ensemble. Les éléments portent
@@ -786,6 +847,11 @@ function wireUI() {
   $('#btnLinkTest').addEventListener('click', () => linkTest());
   $('#btnGpioRead').addEventListener('click', readGpio);
 
+  // Nom du module + sécurité (passkey BLE / mot de passe Wi-Fi)
+  $('#btnRenameSelf').addEventListener('click', renameModule);
+  $('#btnSecPasskey').addEventListener('click', changePasskey);
+  $('#btnSecWifi').addEventListener('click', changeWifi);
+
   matchMedia('(orientation:landscape)').addEventListener('change', updateEnv);
   window.addEventListener('resize', updateEnv);
 }
@@ -850,7 +916,7 @@ function init() {
   try { wireUI(); } catch (e) { logLine('err', 'wireUI : ' + e.message); }
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
 
-  logLine('in', '=== app.js v7 (étoile multi-esclaves, STATUS JSON, routage par id) chargé ===');
+  logLine('in', '=== app.js v8 (sécurité LESC + passkey/Wi-Fi + renommage des modules) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

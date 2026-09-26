@@ -14,10 +14,10 @@ média) et un serveur BLE recevant les commandes du site web.
 | `keymap_azerty.h` | **Table AZERTY** (caractère Unicode → touche HID + modificateurs) — pièce critique |
 | `status_led.h` | Indicateur LED RGB WS2812 (tâche dédiée) |
 | `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
-| `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair |
+| `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair, **passkey LESC**, **clé WPA2**, **nom convivial** du module + des esclaves |
 | `com_port.h` | **Port COM** : réutilise l'unique CDC (interface 0) en mode protocole (1 ligne JSON = 1 commande, 1 STATUS = 1 ligne). Pas de 2ᵉ CDC (budget d'endpoints S3) |
 | `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11), scrutation anti-rebond |
-| `ble_link.h` | **Appairage BLE ↔ BLE** : scan, bind/unbind, tâche `link` (le maître est client GATT de l'esclave) |
+| `ble_link.h` | **Appairage BLE ↔ BLE (chiffré LESC)** : scan, bind (bootstrap Just Works + provisioning sur PROV), unbind, tâche `link` (client GATT ; `secureConnection()` avant tout `writeValue`) |
 | `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
 | `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
 
@@ -29,7 +29,8 @@ code de référence fourni. Les équivalents utilisés :
 
 - USB HID composite (clavier + Consumer Control + souris) → `USBHIDKeyboard` +
   `USBHIDConsumerControl` + `USBHIDMouse` (TinyUSB) ;
-- serveur GATT → pile BLE intégrée (`BLEDevice.h`, Bluedroid) ;
+- serveur GATT → pile BLE intégrée (`BLEDevice.h`) ; le cœur esp32 3.x la construit
+  sur **NimBLE** (sécurité LESC via `BLESecurity`) ;
 - parseur JSON → **ArduinoJson v7** ;
 - séquenceur autonome → tâche FreeRTOS + file de commandes (horloge locale).
 
@@ -126,16 +127,22 @@ maître/local par défaut) :
 | `{"t":"cfg","a":"get"}` | lire la config + table des esclaves | `{"id":0,"ev":"cfg","hid_kb":1,…,"role":1,"mac":"…","self":0,"slaves":[{"id":1,"mac":"…","up":1,"rssi":-62}]}` |
 | `{"t":"cfg","a":"set","hid_kb":true,…,"gpio":true,"pair":true}` | sauver en NVS puis **redémarrer** | `{"id":0,"ev":"cfg","saved":true}` |
 | `{"t":"pair","a":"scan"}` | scan BLE 4 s des modules HID-Bridge | `{"id":0,"ev":"scan","mac":"…","rssi":-60,"name":"…"}` ×N puis `{"…,"done":true}` |
-| `{"t":"pair","a":"bind","mac":"aa:bb:…"}` | **ajouter** ce module comme esclave (id auto, plus petit libre 1..3) | `{"id":0,"ev":"pair","ok":true}` + reboot, sinon `err:pair`/`err:full` |
-| `{"t":"pair","a":"slave","mac":"<maître>","id":n}` | (reçu du maître) devenir **esclave** id `n` | `pair` ok + reboot |
-| `{"t":"pair","a":"unbind","id":n}` | (maître) libérer l'esclave `n` (`id`=0 ou absent = **tous**) | `pair` ok + reboot |
-| `{"t":"pair","a":"reset"}` | **retour au mode standard** — à envoyer sur le **port COM** d'un esclave orphelin | `pair` ok + reboot |
+| `{"t":"pair","a":"bind","mac":"aa:bb:…","name":"…"}` | **ajouter** ce module comme esclave (id auto 1..3 ; `name` = nom annoncé, mis en cache) | `{"id":0,"ev":"pair","ok":true}` + reboot, sinon `err:pair`/`err:full` |
+| `{"t":"pair","a":"slave","mac":"<maître>","id":n,"pk":N}` | (reçu du maître **via PROV**) devenir **esclave** id `n`, enregistrer la passkey `pk` | `pair` ok + reboot |
+| `{"t":"pair","a":"unbind","id":n}` | (maître) libérer l'esclave `n` (`id`=0 ou absent = **tous**) + effacer son bond | `pair` ok + reboot |
+| `{"t":"pair","a":"reset"}` | **retour au mode standard** (passkey→`000000`, bonds effacés, **nom conservé**) — port COM d'un esclave orphelin | `pair` ok + reboot |
 | **5 appuis sur BOOT** (< 3 s) | désappairage physique : maître → toute l'étoile, esclave → `reset` | `pair` ok + reboot |
+| `{"t":"sec","a":"passkey","pk":"NNNNNN"}` | changer la passkey LESC (refusé si esclaves appairés) → efface les bonds | `{"id":0,"ev":"sec","ok":true}` + reboot, sinon `err:slaves`/`err:sec` |
+| `{"t":"sec","a":"wifi","psk":"…"}` | changer la clé WPA2 du SoftAP (≥ 8 car.) | `sec` ok + reboot, sinon `err:sec` |
+| `{"t":"sec","a":"get"}` | indicateurs sécurité (jamais les valeurs) | `{"id":0,"ev":"sec","pkset":0,"wifiset":0}` |
+| `{"t":"name","name":"…"}` / `…,"id":n}` | renommer ce module (→ **reboot**, le nom est l'annonce BLE) / (maître) l'esclave `n` (routé, **pas de reboot** de l'esclave) | `{"id":n,"ev":"name","name":"…"[,"reboot":true]}` |
 | `{"t":"gpio","p":"4","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout) | `{"id":1,"ev":"gpio","p":"4","v":1}` (aussi spontané sur entrée) |
 | — | événements du lien (maître, par esclave) | `{"id":1,"ev":"link","up":true}`, `{"…,"up":false}`, `{"…,"rssi":-62}` (2 s) |
 
 Erreurs : `{"id":n,"err":"nolink"}` (esclave `n` injoignable), `err:id` (id inconnu),
-`err:full` (table pleine), `err:nohid`, `err:gpio`, `err:pair`. Frames STATUS ≤ **384 o**.
+`err:full` (table pleine), `err:slaves` (changement de passkey refusé : esclaves
+appairés), `err:sec` (passkey/PSK invalide), `err:nohid`, `err:gpio`, `err:pair`.
+Frames STATUS ≤ **512 o**.
 
 **Désappairage physique** : **5 appuis sur BOOT** (GPIO0) en moins de 3 s (tâche
 `bootResetTask` autonome, chaque appui = impulsion LED violette) — un maître désappaire
@@ -201,20 +208,52 @@ Format des commandes : **JSON UTF-8** (socle §5.2). La traduction AZERTY→HID 
   standard 8 octets et fonctionne sous OS. Le fonctionnement *dès le BIOS/UEFI*
   (recette §6.1) dépend de l'hôte ; si un firmware de carte-mère l'exige
   strictement, il faudra un descripteur TinyUSB avec sous-classe *boot* explicite.
-- **Bluedroid + USB** cohabitent mais sont gourmands en RAM ; en cas d'instabilité
-  mémoire, basculer la pile BLE sur **NimBLE-Arduino** (plus légère, recommandée
-  par le socle) est l'évolution naturelle.
+- **BLE + Wi-Fi + USB** cohabitent mais sont gourmands en RAM. Le cœur esp32 3.x
+  construit déjà la pile BLE sur **NimBLE** (plus légère que Bluedroid, et support
+  LESC via `BLESecurity`) : c'est ce qui est utilisé ici.
 - **Total des connexions BLE simultanées ≤ 3** (`CONFIG_BT_NIMBLE_MAX_CONNECTIONS`) :
   un maître à 3 esclaves n'a plus de connexion libre pour un téléphone → piloter le maître
   par **COM ou Wi-Fi** (qui ne consomment pas de connexion BLE). Un module déjà connecté à un
   téléphone n'annonce plus : il n'apparaît pas dans un scan d'appairage.
-- Les frames STATUS font jusqu'à **384 octets** (le `cfg` embarque la table `slaves[]`) :
+- Les frames STATUS font jusqu'à **512 octets** (le `cfg` embarque `slaves[]` + les noms) :
   un MTU BLE élevé est requis (Android/Chrome, Windows et nRF Connect négocient 517 ; log `[BLE] MTU=`).
 - Majuscules accentuées et touches mortes exotiques hors couverture (spec S3 §6) :
   caractère absent de la table → ignoré + `err:unmapped`, jamais de frappe au hasard.
 
+## Sécurité (phase LESC)
+
+Les liaisons BLE sont chiffrées en **LE Secure Connections** avec une **passkey
+statique** (défaut `000000`, redéfinissable). Points clés (pile **NimBLE**, cœur 3.x) :
+
+- **iocap globale par rôle** : standard/maître = *DisplayOnly* (le téléphone **saisit**
+  la passkey dans la boîte d'appairage de l'**OS**, pas la page web) ; esclave =
+  *KeyboardOnly* → le lien maître↔esclave fait un **Passkey-Entry MITM automatique**
+  (passkey partagée auto-injectée des deux côtés). `BLESecurity::*` **après**
+  `BLEDevice::init()`.
+- **CMD = `WRITE_AUTHEN`** (chiffré + MITM) : un pair non appairé ne peut **rien**
+  écrire. STATUS = `READ_ENC`. `setAccessPermissions()` étant un no-op sous NimBLE, le
+  niveau de sécurité passe par les **bits de propriété** de la caractéristique.
+- **Bind = bootstrap Just Works** : le maître se connecte au module vierge (les deux
+  *DisplayOnly* → Just Works chiffré, sans passkey), écrit l'ordre de provisioning
+  **sur `PROV`** (mac + id + **passkey du maître**) sur ce lien déjà chiffré, efface le
+  bond bootstrap, reboot. Au régime établi, `ble_link` fait `secureConnection()`
+  (Passkey-Entry MITM) avant tout `writeValue`.
+- **Changer la passkey** (`sec`/`passkey`) **efface les bonds** (`ble_store_clear`) —
+  sinon l'ancienne LTK reste valable — et **exige d'abord de désappairer tous les
+  esclaves**. Côté téléphone : **« oublier »** le module dans les réglages Bluetooth,
+  puis se ré-appairer avec la nouvelle passkey.
+- **Renommage** (`name`) : nom convivial persistant (NVS), annoncé en GAP (repère au
+  scan / au ré-appairage) ; conservé au désappairage. Garder des noms **uniques**.
+- **Mot de passe Wi-Fi** (`sec`/`wifi`) : la clé WPA2 du SoftAP est en NVS (ex-`apikey00`
+  en dur). Le WebSocket reste en clair : **seule la WPA2** protège le canal Wi-Fi ; le
+  **port COM** est un canal physique de confiance (non chiffré).
+
+**À valider au matériel** : l'appairage passkey via **Web Bluetooth** (Chrome
+Android/Windows) — l'OS affiche « Saisir le code », pas la page.
+
 ## ⚠️ BadUSB
 
-Ce périphérique **est** un injecteur de frappes. Tant que la phase sécurité n'est
-pas faite (appairage chiffré, liste blanche, authentification du site), ne le
-brancher **que sur des machines de confiance**.
+Ce périphérique **reste** un injecteur de frappes côté **USB** (la cible ne
+distingue pas ce clavier d'un vrai). Le canal BLE est désormais appairé/chiffré,
+mais l'authentification du **site web** et le chiffrement du WebSocket **Wi-Fi**
+restent hors périmètre : brancher de préférence **sur des machines de confiance**.

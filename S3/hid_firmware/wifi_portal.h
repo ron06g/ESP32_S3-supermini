@@ -33,7 +33,9 @@
 //  Réglages SoftAP (mock : clé WPA2 >= 8 caractères, cf. cahier §6.3)
 // ---------------------------------------------------------------------------
 static const char*     AP_SSID   = "S3-KBD";
-static const char*     AP_PSK    = "apikey00";     // >= 8 car. « apikey » (6c) serait REFUSÉ
+// Clé WPA2 : désormais dans la config NVS (g_cfg.apPsk, cf. config.h), modifiable
+// via {"t":"sec","a":"wifi","psk":"…"}. Défaut « apikey00 » posé par cfgLoad.
+// (>= 8 car. requis par WPA2 : une clé plus courte fait échouer softAP.)
 static const IPAddress AP_IP(192, 168, 4, 1);
 static const IPAddress AP_MASK(255, 255, 255, 0);
 static const uint16_t  HTTP_PORT = 80;
@@ -161,7 +163,7 @@ static void wifiPortalBegin() {
 
   WiFi.mode(WIFI_AP);                             // AP seul (moins de RAM que AP_STA)
   WiFi.softAPConfig(AP_IP, AP_IP, AP_MASK);      // IP/passerelle fixes AVANT softAP
-  bool ok = WiFi.softAP(AP_SSID, AP_PSK, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
+  bool ok = WiFi.softAP(AP_SSID, g_cfg.apPsk, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
   WiFi.setSleep(false);                           // pas de modem-sleep : captif + WS réactifs
   WiFi.setTxPower(WIFI_POWER_11dBm);              // conso/chaleur : AP courte portée (tél. en main), ~19->11 dBm
   DBG("[WiFi] SoftAP '%s' %s — IP %s\n",

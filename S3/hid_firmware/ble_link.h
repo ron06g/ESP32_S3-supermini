@@ -7,10 +7,14 @@
 //  ne fait que RELAYER verbatim (aucune réécriture).
 //
 //    scan   : linkScan()            -> {"id":0,"ev":"scan",...} ... "done":true
-//    bind   : linkBind(mac)         -> connexion one-shot, ordre pair/slave+id,
-//                                      attente ack, slaveAdd(), reboot
-//    unbind : linkUnbind(id)        -> reset à l'esclave (id==0 = tous), reboot
+//    bind   : linkBind(mac,name)    -> connexion one-shot ; bootstrap LESC
+//                                      « Just Works » (chiffre, non authentifie,
+//                                      le maitre garde sa passkey) ; ordre de
+//                                      provisioning sur PROV (mac+id+passkey) ;
+//                                      efface le bond bootstrap ; slaveAdd(), reboot
+//    unbind : linkUnbind(id)        -> reset à l'esclave + unpair (id==0 = tous), reboot
 //    lien   : linkBegin()           -> tâche `relay` + une tâche `linkN` par esclave
+//                                      (secureConnection LESC MITM avant tout writeValue)
 //    envoi  : linkForward(id,json)  -> file TX du slot id
 //
 //  Pile : NimBLE (coeur 3.x) derrière l'API Arduino BLEDevice ; BLEAddress(uint8_t[6])
@@ -154,6 +158,16 @@ static void linkTask(void* arg) {
       DBG("[LINK%u] connexion...\n", id);
       if (client->connect(BLEAddress(mac), BLE_ADDR_PUBLIC, LINK_CONNECT_TIMEOUT_MS)) {
         client->setMTU(517);
+        // Chiffrement LESC (Passkey-Entry MITM) AVANT tout writeValue : la CMD de
+        // l'esclave exige WRITE_AUTHEN. secureConnection() bloque jusqu'a la fin du
+        // pairing (bond reutilise aux reconnexions). Sans ca, la 1re ecriture
+        // echouerait (« insufficient authentication ») et emettrait err:nolink.
+        if (!client->secureConnection()) {
+          DBG("[LINK%u] securisation echouee\n", id);
+          client->disconnect();
+          vTaskDelay(pdMS_TO_TICKS(LINK_RETRY_MS));
+          continue;
+        }
         BLERemoteService* svc = client->getService(SERVICE_UUID);
         BLERemoteCharacteristic* st = svc ? svc->getCharacteristic(STATUS_UUID) : nullptr;
         cmd = svc ? svc->getCharacteristic(CMD_UUID) : nullptr;
@@ -242,7 +256,7 @@ static void bindNotifyCB(BLERemoteCharacteristic*, uint8_t* data, size_t len, bo
   if (strstr(t, "pair")) g_bindAck = true;    // ack {"...,"ev":"pair","ok":true} ou "pair:ok"
 }
 
-static void linkBind(const char* mac) {
+static void linkBind(const char* mac, const char* name) {
   uint8_t peer[6];
   if (!g_cfg.pair || (g_cfg.role != ROLE_STD && g_cfg.role != ROLE_MASTER) || !cfgParseMac(mac, peer)) {
     notifyStatus("err:pair"); return;
@@ -256,26 +270,40 @@ static void linkBind(const char* mac) {
   bool ok = false;
   if (c->connect(BLEAddress(peer), BLE_ADDR_PUBLIC, LINK_CONNECT_TIMEOUT_MS)) {
     c->setMTU(517);
-    BLERemoteService* svc = c->getService(SERVICE_UUID);
-    BLERemoteCharacteristic* cmd = svc ? svc->getCharacteristic(CMD_UUID) : nullptr;
-    BLERemoteCharacteristic* st  = svc ? svc->getCharacteristic(STATUS_UUID) : nullptr;
-    if (cmd && st) {
-      g_bindAck = false;
-      st->registerForNotify(bindNotifyCB);
-      char order[96];
-      snprintf(order, sizeof(order), "{\"t\":\"pair\",\"a\":\"slave\",\"mac\":\"%s\",\"id\":%u}",
-               BLEDevice::getAddress().toString().c_str(), id);
-      if (cmd->writeValue((uint8_t*)order, strlen(order), true)) {
-        for (int i = 0; i < 40 && !g_bindAck; i++) vTaskDelay(pdMS_TO_TICKS(50));   // <= 2 s
-        ok = g_bindAck;
+    // Bootstrap : les deux modules sont DisplayOnly -> LESC « Just Works »
+    // (chiffre, non authentifie). Le maitre GARDE sa passkey (aucune saisie a
+    // 000000). La vraie passkey est ensuite poussee sur ce lien DEJA chiffre,
+    // via la caracteristique de provisioning PROV (WRITE_ENC, presente seulement
+    // sur un module vierge). CMD (WRITE_AUTHEN) refuserait ce lien non authentifie.
+    if (c->secureConnection()) {
+      BLERemoteService* svc = c->getService(SERVICE_UUID);
+      BLERemoteCharacteristic* prov = svc ? svc->getCharacteristic(PROV_UUID)   : nullptr;
+      BLERemoteCharacteristic* st   = svc ? svc->getCharacteristic(STATUS_UUID) : nullptr;
+      if (prov && st) {
+        g_bindAck = false;
+        st->registerForNotify(bindNotifyCB);
+        char order[128];
+        snprintf(order, sizeof(order),
+                 "{\"t\":\"pair\",\"a\":\"slave\",\"mac\":\"%s\",\"id\":%u,\"pk\":%lu}",
+                 BLEDevice::getAddress().toString().c_str(), id, (unsigned long)g_cfg.passkey);
+        if (prov->writeValue((uint8_t*)order, strlen(order), true)) {
+          for (int i = 0; i < 40 && !g_bindAck; i++) vTaskDelay(pdMS_TO_TICKS(50));   // <= 2 s
+          ok = g_bindAck;
+        }
+      } else {
+        DBGLN("[LINK] bind : PROV absent (cible deja appairee ou appairage off ?)");
       }
+    } else {
+      DBGLN("[LINK] bind : securisation (bootstrap) echouee");
     }
     if (c->isConnected()) c->disconnect();
     vTaskDelay(pdMS_TO_TICKS(200));
   }
   delete c;
   if (!ok) { DBGLN("[LINK] bind : echec"); notifyStatus("err:pair"); notifyStatus("ready"); return; }
+  secUnpairMac(peer);                    // efface le bond bootstrap (Just Works) cote maitre : reconnexion en MITM neuf
   slaveAdd(id, peer);
+  slaveSetName(id, name);                // nom capte au scan (affichage + repere au re-appairage)
   g_cfg.role = ROLE_MASTER;
   cfgSave();
   DBG("[LINK] bind OK -> esclave id=%u (%s), reboot\n", id, mac);
@@ -297,17 +325,21 @@ static void linkUnbind(uint8_t id) {
     memset(g_cfg.slaves, 0, sizeof(g_cfg.slaves));
     g_cfg.role = ROLE_STD;
     cfgSave();
+    secClearBonds();                               // efface tous les bonds d'esclaves cote maitre
     DBGLN("[LINK] unbind ALL -> standard, reboot");
     rebootWithStatus("pair:ok");
     return;
   }
 
-  if (slaveIndexById(id) < 0) { notifyStatus("err:pair"); return; }
+  int idx = slaveIndexById(id);
+  if (idx < 0) { notifyStatus("err:pair"); return; }
+  uint8_t smac[6]; memcpy(smac, g_cfg.slaves[idx].mac, 6);   // MAC avant retrait (pour l'unpair)
   if (g_link[id - 1].up) {
     linkForward(id, "{\"t\":\"pair\",\"a\":\"reset\"}", true);
     vTaskDelay(pdMS_TO_TICKS(600));
   }
   slaveRemove(id);
+  secUnpairMac(smac);                              // efface le bond de cet esclave cote maitre
   if (slaveCount() == 0) g_cfg.role = ROLE_STD;    // plus d'esclave -> retour standard
   cfgSave();
   DBG("[LINK] unbind id=%u, reboot\n", id);
