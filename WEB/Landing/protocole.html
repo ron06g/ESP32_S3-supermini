@@ -202,6 +202,7 @@
       <li class="sub"><a href="#c-mouse">mouse</a></li>
       <li class="sub"><a href="#c-ping">ping</a></li>
       <li class="sub"><a href="#c-gpio">gpio</a></li>
+      <li class="sub"><a href="#gpio-reperes">repères GPIO</a></li>
       <li class="sub"><a href="#c-cfg">cfg</a></li>
       <li class="sub"><a href="#c-sec">sec</a></li>
       <li class="sub"><a href="#c-name">name</a></li>
@@ -539,29 +540,43 @@
   <div class="tblwrap"><table class="tbl">
     <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>p</code></td><td><b>chaîne</b></td><td>Repère de la broche&nbsp;: <code>"4"</code> <code>"5"</code> <code>"6"</code> <code>"7"</code> (sorties),
-        <code>"8"</code> <code>"9"</code> <code>"10"</code> <code>"11"</code> (entrées), <code>"BOOT"</code> (bouton intégré, entrée).
-        Toujours entre guillemets. Absent&nbsp;: toutes les broches (<code>read</code> ou <code>clr</code> seulement).</td></tr>
+      <tr><td><code>p</code></td><td><b>chaîne</b></td><td>Repère de la broche&nbsp;: <code>"o1"</code> à <code>"o4"</code> (sorties),
+        <code>"i1"</code> à <code>"i4"</code> (entrées), <code>"BOOT"</code> (bouton intégré, entrée). Majuscules acceptées
+        (<code>"O1"</code>)&nbsp;; les réponses utilisent toujours la forme en minuscules. Absent&nbsp;: toutes les broches (<code>read</code> ou <code>clr</code> seulement).</td></tr>
       <tr><td><code>a</code></td><td>chaîne</td><td><code>read</code> (défaut), <code>set</code> (niveau haut), <code>clr</code> (niveau bas),
         <code>tgl</code> (inverser), <code>loop</code> (clignotement autonome), <code>pwm</code> (PWM autonome). Écriture sur les sorties uniquement.</td></tr>
     </tbody>
   </table></div>
-  <div class="code"><pre class="json">→ {"t":"gpio","p":"4","a":"set"}
-← {"id":0,"ev":"gpio","p":"4","v":1}
+  <div class="code"><pre class="json">→ {"t":"gpio","p":"o1","a":"set"}
+← {"id":0,"ev":"gpio","p":"o1","v":1}
 → {"t":"gpio","a":"read"}                     <span class="j-c">// 9 réponses, une par broche</span>
 ← {"id":0,"ev":"gpio","p":"BOOT","v":0}
-← {"id":0,"ev":"gpio","p":"4","v":1}
+← {"id":0,"ev":"gpio","p":"o1","v":1}
 <span class="j-c">  …</span>
-→ {"t":"gpio","p":"6","a":"tgl","id":2}      <span class="j-c">// sortie 6 de l'esclave 2</span>
-← {"id":2,"ev":"gpio","p":"6","v":1}</pre></div>
+→ {"t":"gpio","p":"o3","a":"tgl","id":2}      <span class="j-c">// sortie o3 de l'esclave 2</span>
+← {"id":2,"ev":"gpio","p":"o3","v":1}</pre></div>
   <ul class="list">
     <li><b>Sorties</b>&nbsp;: <code>v:1</code> = 3,3&nbsp;V. Toutes à <code>0</code> au démarrage. <code>{"t":"gpio","a":"clr"}</code> sans
       <code>p</code> éteint toutes les sorties et arrête tous les effets (une réponse par sortie).</li>
     <li><b>Entrées</b>&nbsp;: résistance de rappel au 3,3&nbsp;V, actives à l'état bas&nbsp;: <code>v:1</code> = contact fermé vers la masse
       (bouton pressé). Chaque changement est signalé <b>spontanément</b>, après un anti-rebond d'environ 60&nbsp;ms.</li>
-    <li><b>Erreur</b> <code>gpio</code>&nbsp;: fonction GPIO désactivée, broche inconnue (ou <code>p</code> numérique), écriture sur une entrée,
+    <li><b>Erreur</b> <code>gpio</code>&nbsp;: fonction GPIO désactivée, broche inconnue — y compris les anciens repères numériques <code>"4"</code>…<code>"11"</code>
+      ou un <code>p</code> non textuel —, écriture sur une entrée,
       action inconnue, paramètre d'effet absent ou hors limites.</li>
   </ul>
+
+  <h3 id="gpio-reperes">Repères et broches physiques <small>pour le câblage</small></h3>
+  <p>Les repères sont <b>logiques</b>&nbsp;: numérotés à partir de 1 dans chaque sens, indépendamment du numéro de GPIO de la puce.
+    Une broche ajoutée par une future version prend simplement le repère suivant de son sens (<code>o5</code>, <code>i5</code>…)&nbsp;: les
+    repères existants ne changent jamais.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Repère</th><th>Sens</th><th>GPIO (S3 SuperMini)</th><th>Niveau «&nbsp;1&nbsp;»</th></tr></thead>
+    <tbody>
+      <tr><td><code>o1</code> <code>o2</code> <code>o3</code> <code>o4</code></td><td>Sorties</td><td>4 · 5 · 6 · 7</td><td>3,3&nbsp;V</td></tr>
+      <tr><td><code>i1</code> <code>i2</code> <code>i3</code> <code>i4</code></td><td>Entrées</td><td>8 · 9 · 10 · 11</td><td>Contact fermé vers la masse</td></tr>
+      <tr><td><code>BOOT</code></td><td>Entrée</td><td>0 (bouton intégré)</td><td>Bouton pressé</td></tr>
+    </tbody>
+  </table></div>
 
   <h3 id="gpio-effets">Effets autonomes <small>clignotement et PWM exécutés par la carte</small></h3>
   <p>Pour un changement d'état fréquent et répétitif, inutile d'envoyer une commande par transition&nbsp;: une seule commande
@@ -578,13 +593,13 @@
         2,4 kHz, puis dégressive jusqu'à 9 bits (512 pas) à 40 kHz.</td></tr>
     </tbody>
   </table></div>
-  <div class="code"><pre class="json">→ {"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}
-← {"id":0,"ev":"gpio","p":"4","v":1,"fx":"loop"}
+  <div class="code"><pre class="json">→ {"t":"gpio","p":"o1","a":"loop","t_set":200,"t_clr":800,"nb":5}
+← {"id":0,"ev":"gpio","p":"o1","v":1,"fx":"loop"}
 <span class="j-c">  … 5 éclats de 200 ms, une seconde d'intervalle, sans aucune trame …</span>
-← {"id":0,"ev":"gpio","p":"4","v":0,"fx":"loop","done":true}
-→ {"t":"gpio","p":"5","a":"pwm","duty":25,"t_pwm":3000,"id":2}   <span class="j-c">// sur l'esclave 2</span>
-← {"id":2,"ev":"gpio","p":"5","v":1,"fx":"pwm","duty":25}
-← {"id":2,"ev":"gpio","p":"5","v":0,"fx":"pwm","done":true}     <span class="j-c">// 3 s plus tard</span></pre></div>
+← {"id":0,"ev":"gpio","p":"o1","v":0,"fx":"loop","done":true}
+→ {"t":"gpio","p":"o2","a":"pwm","duty":25,"t_pwm":3000,"id":2}   <span class="j-c">// sur l'esclave 2</span>
+← {"id":2,"ev":"gpio","p":"o2","v":1,"fx":"pwm","duty":25}
+← {"id":2,"ev":"gpio","p":"o2","v":0,"fx":"pwm","done":true}     <span class="j-c">// 3 s plus tard</span></pre></div>
   <ul class="list">
     <li><b>Une nouvelle commande interrompt la commande en cours</b>&nbsp;: <code>set</code>, <code>clr</code>, <code>tgl</code>,
       <code>loop</code> ou <code>pwm</code> sur une sortie arrête son effet et applique la nouvelle consigne. <code>read</code> n'interrompt rien
@@ -706,8 +721,8 @@
   <div class="tblwrap"><table class="tbl">
     <thead><tr><th>Événement</th><th>Exemple</th><th>Quand</th></tr></thead>
     <tbody>
-      <tr><td>Entrée GPIO</td><td><code>{"id":0,"ev":"gpio","p":"8","v":1}</code></td><td>Changement d'état d'une entrée (ou du bouton BOOT), sur ce module ou un esclave.</td></tr>
-      <tr><td>Fin d'effet GPIO</td><td><code>{"id":0,"ev":"gpio","p":"4","v":0,"fx":"loop","done":true}</code></td><td>Un clignotement (<code>nb</code>
+      <tr><td>Entrée GPIO</td><td><code>{"id":0,"ev":"gpio","p":"i1","v":1}</code></td><td>Changement d'état d'une entrée (ou du bouton BOOT), sur ce module ou un esclave.</td></tr>
+      <tr><td>Fin d'effet GPIO</td><td><code>{"id":0,"ev":"gpio","p":"o1","v":0,"fx":"loop","done":true}</code></td><td>Un clignotement (<code>nb</code>
         atteint) ou un PWM (<code>t_pwm</code> écoulé) se termine.</td></tr>
       <tr><td>Lien esclave</td><td><code>{"id":1,"ev":"link","up":false}</code></td><td>Maître&nbsp;: un esclave se connecte ou se déconnecte.</td></tr>
       <tr><td>Signal</td><td><code>{"id":1,"ev":"link","rssi":-62}</code></td><td>Maître&nbsp;: toutes les 2 s par esclave lié.</td></tr>
@@ -766,16 +781,16 @@
   <ul class="list">
     <li>Ajoutez <code>"id":1</code> à <code>3</code> pour viser un esclave&nbsp;; sans <code>id</code>, la commande s'exécute sur le maître.</li>
     <li><code>cfg</code>, <code>pair</code>, <code>sec</code> et <code>name</code> sont toujours traitées par le maître.</li>
-    <li>Les réponses d'un esclave sont relayées telles quelles, avec son id&nbsp;: <code>{"id":2,"ev":"gpio","p":"8","v":1}</code>.</li>
+    <li>Les réponses d'un esclave sont relayées telles quelles, avec son id&nbsp;: <code>{"id":2,"ev":"gpio","p":"i1","v":1}</code>.</li>
     <li>Esclave injoignable&nbsp;: <code>{"id":2,"err":"nolink"}</code>, et un événement <code>link</code> signale son retour.</li>
     <li>Un esclave est destiné aux entrées/sorties. Son propre port COM (s'il est activé) le pilote localement&nbsp;;
       <code>{"t":"pair","a":"reset"}</code> l'y libère de son maître.</li>
   </ul>
   <div class="code"><pre class="json">→ {"t":"cfg","a":"get"}
 ← {"id":0,"ev":"cfg",…,"role":1,…,"slaves":[{"id":1,…,"up":1},{"id":2,…,"up":0}]}
-→ {"t":"gpio","p":"5","a":"set","id":1}
-← {"id":1,"ev":"gpio","p":"5","v":1}
-→ {"t":"gpio","p":"5","a":"set","id":2}
+→ {"t":"gpio","p":"o2","a":"set","id":1}
+← {"id":1,"ev":"gpio","p":"o2","v":1}
+→ {"t":"gpio","p":"o2","a":"set","id":2}
 ← {"id":2,"err":"nolink"}</pre></div>
 </section>
 
@@ -835,7 +850,7 @@ kbd = S3KBD()
 kbd.envoyer({"t": "txt", "v": "Bonjour, café à 5 € !\n"})
 kbd.envoyer({"t": "char", "v": "s", "m": 1})        # Ctrl+S
 kbd.attendre(1)
-kbd.envoyer({"t": "gpio", "p": "4", "a": "loop", "t_set": 200, "t_clr": 800, "nb": 5})
+kbd.envoyer({"t": "gpio", "p": "o1", "a": "loop", "t_set": 200, "t_clr": 800, "nb": 5})
 kbd.envoyer({"t": "stop"}, trame=True)</pre></div>
 
   <h3 id="ex-ps">PowerShell <small>Windows, sans installation</small></h3>

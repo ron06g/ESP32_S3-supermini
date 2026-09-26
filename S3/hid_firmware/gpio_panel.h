@@ -1,20 +1,25 @@
 // ===========================================================================
 //  gpio_panel.h  —  Panneau GPIO : sorties (niveau, clignotement, PWM) + entrées
 // ---------------------------------------------------------------------------
-//  Nommage = sérigraphie de la S3 SuperMini (numéro de GPIO), plus « BOOT »
-//  (GPIO0, bouton intégré : testable sans câblage).
+//  Nommage LOGIQUE, indépendant du numéro de GPIO physique :
+//    - sorties  o1, o2, o3…  (numérotées à partir de 1, dans l'ordre de la table) ;
+//    - entrées  i1, i2, i3…  (idem) ;
+//    - « BOOT » : bouton intégré (GPIO0, entrée), nom conservé — testable sans câblage.
+//  Ajouter une broche = une ligne dans GPIO_TABLE avec le repère SUIVANT de son sens
+//  (o5, i5…) ; rien d'autre ne change. Garder les libellés alignés avec
+//  WEB/Keyboard/app.js (GPIO_OUT / GPIO_IN). Recherche insensible à la casse.
 //
 //  Protocole (le champ `id` désigne la carte ; le maître route, la carte visée exécute) :
-//    {"t":"gpio","p":"4","a":"set|clr|tgl|read"}      niveau / lecture d'une broche
+//    {"t":"gpio","p":"o1","a":"set|clr|tgl|read"}     niveau / lecture d'une broche
 //    {"t":"gpio","a":"read"}                           lecture de toutes les broches
 //    {"t":"gpio","a":"clr"}                            toutes les sorties à 0, effets arrêtés
-//    {"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":3}
+//    {"t":"gpio","p":"o1","a":"loop","t_set":200,"t_clr":800,"nb":3}
 //        clignotement AUTONOME : nb cycles (haut t_set ms puis bas t_clr ms) ;
 //        nb 0 ou absent = infini. Fin : sortie à 0 + {"…","done":true}.
-//    {"t":"gpio","p":"5","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}
+//    {"t":"gpio","p":"o2","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}
 //        PWM MATÉRIEL (LEDC) : duty 0..100 %, pendant t_pwm ms (0 ou absent =
 //        infini), hz facultatif (défaut 1000). Fin : sortie à 0 + "done".
-//    STATUS {"id":n,"ev":"gpio","p":"4","v":1[,"fx":"loop"|"fx":"pwm","duty":d][,"done":true]}
+//    STATUS {"id":n,"ev":"gpio","p":"o1","v":1[,"fx":"loop"|"fx":"pwm","duty":d][,"done":true]}
 //
 //  Règle : toute commande d'ÉCRITURE sur une sortie (set / clr / tgl / loop /
 //  pwm) interrompt l'effet en cours sur CETTE sortie ; `read` n'interrompt rien.
@@ -44,11 +49,12 @@
 enum : uint8_t { GP_IN = 0, GP_OUT = 1 };
 struct gpio_def_t { const char* label; uint8_t pin; uint8_t dir; };
 
-// >>> Table unique — adapter ici si la sérigraphie diffère. <<<
+// >>> Table unique : repère logique -> GPIO physique (S3 SuperMini). <<<
+//     Nouvelle broche : ajouter une ligne avec le repère suivant de son sens.
 static const gpio_def_t GPIO_TABLE[] = {
-  { "BOOT", 0,  GP_IN  },
-  { "4",    4,  GP_OUT }, { "5",  5,  GP_OUT }, { "6",  6,  GP_OUT }, { "7",  7,  GP_OUT },
-  { "8",    8,  GP_IN  }, { "9",  9,  GP_IN  }, { "10", 10, GP_IN  }, { "11", 11, GP_IN  },
+  { "BOOT", 0,  GP_IN  },                          // bouton intégré
+  { "o1",   4,  GP_OUT }, { "o2",  5, GP_OUT }, { "o3",  6, GP_OUT }, { "o4",  7, GP_OUT },
+  { "i1",   8,  GP_IN  }, { "i2",  9, GP_IN  }, { "i3", 10, GP_IN  }, { "i4", 11, GP_IN  },
 };
 static const size_t GPIO_COUNT = sizeof(GPIO_TABLE) / sizeof(GPIO_TABLE[0]);
 
@@ -97,7 +103,7 @@ static TickType_t fxTicks(uint32_t ms) {           // ms -> ticks sans débordem
 
 static int gpioFind(const char* label) {
   if (!label) return -1;
-  for (size_t i = 0; i < GPIO_COUNT; i++) if (!strcmp(GPIO_TABLE[i].label, label)) return (int)i;
+  for (size_t i = 0; i < GPIO_COUNT; i++) if (!strcasecmp(GPIO_TABLE[i].label, label)) return (int)i;   // "O1" = "o1"
   return -1;
 }
 

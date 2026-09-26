@@ -300,7 +300,7 @@
         </g>
 
         <!-- GPIO badge -->
-        <g class="node hot" id="gpio-auto" data-tip-title="GPIO locaux" data-tip="Sorties 4-7 et entrées BOOT, 8-11. Pilotables par le contrôleur (commande gpio) ; les changements d'entrée remontent en STATUS. N'atteint jamais la machine cible.">
+        <g class="node hot" id="gpio-auto" data-tip-title="GPIO locaux" data-tip="Sorties o1-o4 et entrées BOOT, i1-i4. Pilotables par le contrôleur (commande gpio) ; les changements d'entrée remontent en STATUS. N'atteint jamais la machine cible.">
           <rect x="415" y="222" width="150" height="34" rx="9" fill="#1b2230"/>
           <text class="pin" x="490" y="244" text-anchor="middle" fill="#d2a8ff">🔌 GPIO locaux</text>
         </g>
@@ -443,7 +443,7 @@
       <tr><td>HID clavier</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Clavier + touches média USB ; onglets AZERTY, Num, Fn/Média.</td></tr>
       <tr><td>HID souris</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Souris USB ; onglet Souris.</td></tr>
       <tr><td>Port COM</td><td class="v"><span class="state no">✗ désactivé</span></td><td class="why">Aucun port série exposé : un module neuf n'apparaît que comme clavier/souris.</td></tr>
-      <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO (sorties 4-7, entrées BOOT et 8-11).</td></tr>
+      <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO (sorties o1-o4, entrées BOOT et i1-i4).</td></tr>
       <tr><td>Appairage</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Scan et appairage BLE ↔ BLE en étoile.</td></tr>
       <tr><td>BLE (contrôleur)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Le module s'annonce : un téléphone / PC peut s'y connecter.</td></tr>
       <tr><td>Wi-Fi (SoftAP)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Point d'accès + portail captif + app embarquée.</td></tr>
@@ -554,8 +554,9 @@
     <div class="app"><h4>🔢 Num</h4><p>Pavé numérique, opérateurs, parenthèses, <b>€</b>, Entrée et touches d'édition.</p></div>
     <div class="app"><h4>🎛️ Fn / Média</h4><p>Volume, lecture, accueil / retour, F1-F12, navigation, <b>raccourcis Windows</b>
       prêts à l'emploi, et <b>création de séquence</b> (frappes, attentes, répétitions — tempo tenu par le module).</p></div>
-    <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran : sorties en bascule,
-      entrées en voyants (pull-up, actif bas). « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
+    <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran : sorties
+      <b>o1–o4</b> en bascule, entrées <b>i1–i4</b> en voyants (pull-up, actif bas), bouton BOOT.
+      Le GPIO physique de chaque repère s'affiche au survol. « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
       sur une sortie&nbsp;: popup <b>clignotement</b> (durées allumé / éteint, préréglages) ou <b>PWM</b> (rapport cyclique, fréquence),
       exécuté par la carte en continu jusqu'au prochain clic ou «&nbsp;Arrêter&nbsp;». Une sortie en effet a une bordure qui pulse.</p></div>
     <div class="app cfg"><h4>⚙️ Réglages</h4><p><b>Module</b> : MAC, rôle, renommage. <b>Sécurité</b> : passkey et clé Wi-Fi
@@ -631,10 +632,10 @@ const S={
    L("p_ab",1,"ready",B,'3 · <code>STATUS</code> revient au contrôleur.')
   ],
   gpio:[
-   L("p_ab",0,"set 4",B,'1 · Le contrôleur envoie <code>{"t":"gpio","p":"4","a":"set"}</code>.'),
-   SP('2 · La <b>broche 4 du module</b> passe à 3,3 V. ⚠️ Ça s\'arrête au module : <b>ça n\'atteint pas la machine cible</b>.',"gpio",1200),
-   L("p_ab",1,"gpio:4:1",B,'3 · Le module confirme l\'état de la broche au contrôleur.'),
-   SP('4 · Un <b>bouton du module</b> (BOOT, 8-11) est pressé physiquement.',"gpio",1100),
+   L("p_ab",0,"set o1",B,'1 · Le contrôleur envoie <code>{"t":"gpio","p":"o1","a":"set"}</code>.'),
+   SP('2 · La <b>sortie o1 du module</b> passe à 3,3 V. ⚠️ Ça s\'arrête au module : <b>ça n\'atteint pas la machine cible</b>.',"gpio",1200),
+   L("p_ab",1,"gpio o1:1",B,'3 · Le module confirme l\'état de la broche au contrôleur.'),
+   SP('4 · Un <b>bouton du module</b> (BOOT, i1-i4) est pressé physiquement.',"gpio",1100),
    L("p_ab",1,"gpio:BOOT:1",B,'5 · L\'entrée <b>remonte spontanément</b> vers le contrôleur — le GPIO est <b>bidirectionnel</b>.')
   ],
   com:[
@@ -655,10 +656,10 @@ const S={
    L("c_am",1,"id0 ready",B,'3 · <code>STATUS</code> revient au contrôleur.')
   ],
   gpio:[
-   L("c_am",0,"set 4 · id1",B,'1 · <b>Contrôleur → Maître</b> : <code>{"t":"gpio","p":"4","a":"set","id":1}</code>.'),
+   L("c_am",0,"set o1 · id1",B,'1 · <b>Contrôleur → Maître</b> : <code>{"t":"gpio","p":"o1","a":"set","id":1}</code>.'),
    L("c_ms1",0,"⇢ id 1",V,'2 · <code>id≠0</code> → le maître <b>route</b> la commande vers l\'<b>esclave 1</b> (lien BLE dédié).'),
-   SP('3 · La <b>broche 4 de l\'esclave 1</b> passe à 3,3 V (jamais la machine cible).',"slave1",1200),
-   L("c_ms1",1,"gpio id1",V,'4 · L\'esclave stampe son id : <code>{"id":1,"ev":"gpio","p":"4","v":1}</code> remonte au maître…'),
+   SP('3 · La <b>sortie o1 de l\'esclave 1</b> passe à 3,3 V (jamais la machine cible).',"slave1",1200),
+   L("c_ms1",1,"gpio id1",V,'4 · L\'esclave stampe son id : <code>{"id":1,"ev":"gpio","p":"o1","v":1}</code> remonte au maître…'),
    L("c_am",1,"id1 gpio",B,'5 · …que le maître <b>relaie verbatim</b> au contrôleur.')
   ],
   com:[

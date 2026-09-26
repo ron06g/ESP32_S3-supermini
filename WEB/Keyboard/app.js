@@ -904,11 +904,13 @@ function renderLinkLegend(series) {
 }
 
 // ===========================================================================
-//  GPIO — sorties (bascule) et entrées (voyants). Libellés = table du firmware
-//  (gpio_panel.h) : BOOT + sorties 4..7 + entrées 8..11.
+//  GPIO — sorties (bascule) et entrées (voyants). Repères LOGIQUES = table du
+//  firmware (gpio_panel.h, GPIO_TABLE) : sorties o1.., entrées i1.., numérotées
+//  à partir de 1 dans chaque sens, + BOOT (bouton intégré). `pin` = GPIO physique
+//  (câblage, info-bulle). Nouvelle broche : même ligne ici et dans GPIO_TABLE.
 // ===========================================================================
-const GPIO_OUT = ['4', '5', '6', '7'];
-const GPIO_IN  = ['BOOT', '8', '9', '10', '11'];
+const GPIO_OUT = [ { p:'o1', pin:4 }, { p:'o2', pin:5 }, { p:'o3', pin:6 }, { p:'o4', pin:7 } ];
+const GPIO_IN  = [ { p:'BOOT', pin:0 }, { p:'i1', pin:8 }, { p:'i2', pin:9 }, { p:'i3', pin:10 }, { p:'i4', pin:11 } ];
 // Liste des cartes à afficher : maître (id 0) + esclaves appairés.
 function moduleList() {
   const mods = [{ id:0, name:(cfg && cfg.name) || 'Maître (id 0)' }];
@@ -929,18 +931,19 @@ function buildGpioModules() {
       const cl = document.createElement('div'); cl.className = 'cluster';
       cells.forEach((c) => cl.appendChild(c)); row.appendChild(cl); return row;
     };
-    const outs = GPIO_OUT.map((p) => {
+    const outs = GPIO_OUT.map(({ p, pin }) => {
       const el = document.createElement('div'); el.className = 'key nav gpio';
       el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
-      el.title = 'Clic : basculer · appui long : clignotement ou PWM';
+      el.title = `${p} = GPIO ${pin} · clic : basculer · appui long : clignotement ou PWM`;
       bindLongPress(el,
         () => openGpioFx(mod, p, el),                                        // appui long
         () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, mod.id); }); // clic : bascule
       return el;
     });
-    const ins = GPIO_IN.map((p) => {
+    const ins = GPIO_IN.map(({ p, pin }) => {
       const el = document.createElement('span'); el.className = 'chip led';
       el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
+      el.title = p === 'BOOT' ? 'BOOT = bouton intégré (GPIO 0)' : `${p} = GPIO ${pin} (pull-up, actif bas)`;
       return el;
     });
     sec.appendChild(mkRow('Sorties', outs));
@@ -967,7 +970,9 @@ function bindLongPress(el, onLong, onShort) {
   const cancel = () => { clearTimeout(timer); timer = null; el.classList.remove('pressing'); };
   const fire = () => {
     cancel(); fired = true;
-    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+    // Retour haptique (téléphone) — seulement après un vrai geste, sinon Chrome le bloque.
+    const act = navigator.userActivation;
+    if (navigator.vibrate && (!act || act.hasBeenActive)) { try { navigator.vibrate(15); } catch (e) {} }
     onLong();
   };
   el.addEventListener('pointerdown', (e) => {
@@ -1273,7 +1278,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v19 (appui long GPIO : clignotement / PWM) chargé ===');
+  logLine('in', '=== app.js v20 (repères GPIO o1.. / i1..) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

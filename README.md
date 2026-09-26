@@ -37,7 +37,8 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 - **Appairage en étoile** (BLE ↔ BLE, jusqu'à 3 esclaves) : le maître injecte le HID
   localement (id 0) et **route les GPIO par `id`** vers l'esclave désigné ; désappairage
   physique par **5 appuis sur BOOT**.
-- **Panneau GPIO** pilotable (sorties 4–7, entrées 8–11), avec **clignotement et PWM
+- **Panneau GPIO** pilotable (sorties `o1`–`o4`, entrées `i1`–`i4`, repères logiques
+  numérotés à partir de 1 ; + bouton `BOOT`), avec **clignotement et PWM
   autonomes** exécutés par la carte (aucun trafic radio par transition) + **LED RGB d'état**.
 - **Paramètres persistants** en NVS (`cfg`), pilotables depuis l'app (panneau Réglages).
 - **Optimisation conso/chaleur** : CPU à 160 MHz, puissance TX radios réduite en
@@ -103,7 +104,7 @@ Commandes (JSON UTF-8, champ `t`) :
 | `ping` | test de liaison | `{"t":"ping","n":12}` → `{"id":0,"ev":"pong","n":12}` |
 | `cfg`  | lire/écrire les flags persistants (`set` redémarre) | `{"t":"cfg","a":"get"}` |
 | `pair` | appairage en étoile (`scan`/`bind`/`slave`/`unbind`/`reset`) | `{"t":"pair","a":"scan"}` |
-| `gpio` | sortie / lecture d'une broche (routable par `id`), clignotement `loop` et PWM `pwm` autonomes | `{"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}` |
+| `gpio` | sortie / lecture d'une broche (routable par `id`), clignotement `loop` et PWM `pwm` autonomes | `{"t":"gpio","p":"o1","a":"loop","t_set":200,"t_clr":800,"nb":5}` |
 
 Masque modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr. Champ **`id`**
 optionnel (0 = maître/local par défaut, 1..3 = esclave) : le maître route la commande.

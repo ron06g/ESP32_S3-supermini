@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=19" />
+  <link rel="stylesheet" href="style.css?v=20" />
 </head>
 <body>
 <div class="app">
@@ -88,9 +88,9 @@
     <section id="tab-gpio" class="tabpage scrollpage">
       <div class="row wrap" style="margin-bottom:8px">
         <button id="btnGpioRead" class="btn ghost">Relire tout</button>
-        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties = bascule au clic,
-          <b>appui long = clignotement ou PWM</b> exécuté par la carte ; entrées = voyants (pull-up, actif bas).
-          Nommage = sérigraphie SuperMini ; BOOT = bouton intégré.</span>
+        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties <b>o1…o4</b> = bascule au clic,
+          <b>appui long = clignotement ou PWM</b> exécuté par la carte ; entrées <b>i1…i4</b> = voyants (pull-up, actif bas) ;
+          BOOT = bouton intégré. Le GPIO physique de chaque repère s'affiche au survol.</span>
       </div>
       <div id="gpioModules"></div>
     </section>
@@ -297,7 +297,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=19"></script>
-<script src="pwa.js?v=19"></script>
+<script src="app.js?v=20"></script>
+<script src="pwa.js?v=20"></script>
 </body>
 </html>

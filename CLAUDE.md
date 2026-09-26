@@ -150,7 +150,7 @@ locaux (l'`id` d'un `pair` désigne l'esclave à désappairer, pas une cible de 
 local/maître, 1..3 = esclave qui stampe son `selfId` ; le maître **relaie
 verbatim**). Discriminants : `{"id":n,"st":"ready|busy"}` (état ; seul l'id 0 est
 l'« état courant »), `{"id":n,"err":"<code>"}`, ou événements
-`{"id":n,"ev":"cfg|scan|pair|link|gpio|pong",…}` — ex. `{"id":1,"ev":"gpio","p":"4","v":1}`,
+`{"id":n,"ev":"cfg|scan|pair|link|gpio|pong",…}` — ex. `{"id":1,"ev":"gpio","p":"o1","v":1}`,
 `{"id":2,"ev":"link","up":true}`. Frames jusqu'à **512 octets** (`STATUS_MAX`, le
 `cfg` embarque la table `slaves[]` + les noms). Côté firmware, `notifyStatus()` est un
 **adaptateur** qui convertit encore les chaînes legacy (`ready`/`err:*`/`gpio:*`…)
@@ -251,8 +251,10 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
   au 1er boot (table vidée) : un re-flash impose de ré-appairer (acceptable).
 - `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC ;
   tramage ligne (CR/LF/CRLF) ou `STX…ETX` (resynchronisation, JSON multi-ligne).
-- `gpio_panel.h` : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11,
-  nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`, effets
+- `gpio_panel.h` : table `GPIO_TABLE[]` = repère LOGIQUE -> GPIO physique : sorties
+  `o1`…`o4` (GPIO 4–7), entrées `i1`…`i4` (GPIO 8–11), numérotées à partir de 1 dans
+  chaque sens, + `BOOT` (bouton intégré, GPIO 0). Nouvelle broche = une ligne avec le
+  repère suivant de son sens (o5, i5…), recopiée dans `GPIO_OUT`/`GPIO_IN` (app.js) ; scrutation anti-rebond, `gpioHandle()`, effets
   autonomes des sorties (`g_fx[]`, tâche `gpiofx`, `loop` logiciel + `pwm` LEDC).
   Description complète du protocole : `WEB/Landing/protocole.html`.
 - `ble_link.h` : étoile multi-esclaves. scan / bind (id auto) / unbind (par id ou

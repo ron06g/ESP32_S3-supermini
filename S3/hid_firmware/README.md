@@ -16,7 +16,7 @@ média) et un serveur BLE recevant les commandes du site web.
 | `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
 | `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair, **passkey LESC**, **clé WPA2**, **nom convivial** du module + des esclaves |
 | `com_port.h` | **Port COM** : réutilise l'unique CDC (interface 0) en mode protocole (1 ligne JSON = 1 commande, 1 STATUS = 1 ligne). Pas de 2ᵉ CDC (budget d'endpoints S3) |
-| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11), scrutation anti-rebond, **effets autonomes** des sorties (tâche `gpiofx` : clignotement `loop`, PWM matériel `pwm`) |
+| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (repères logiques : sorties `o1`–`o4` = GPIO 4–7, entrées `i1`–`i4` = GPIO 8–11, + `BOOT`), scrutation anti-rebond, **effets autonomes** des sorties (tâche `gpiofx` : clignotement `loop`, PWM matériel `pwm`) |
 | `ble_link.h` | **Appairage BLE ↔ BLE (chiffré LESC)** : scan, bind (bootstrap Just Works + provisioning sur PROV), unbind, tâche `link` (client GATT ; `secureConnection()` avant tout `writeValue`) |
 | `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
 | `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
@@ -136,9 +136,9 @@ maître/local par défaut) :
 | `{"t":"sec","a":"wifi","psk":"…"}` | changer la clé WPA2 du SoftAP (≥ 8 car.) | `sec` ok + reboot, sinon `err:sec` |
 | `{"t":"sec","a":"get"}` | indicateurs sécurité (jamais les valeurs) | `{"id":0,"ev":"sec","pkset":0,"wifiset":0}` |
 | `{"t":"name","name":"…"}` / `…,"id":n}` | renommer ce module (→ **reboot**, le nom est l'annonce BLE) / (maître) l'esclave `n` (routé, **pas de reboot** de l'esclave) | `{"id":n,"ev":"name","name":"…"[,"reboot":true]}` |
-| `{"t":"gpio","p":"4","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout ; `clr` sans `p` = tout éteindre) | `{"id":1,"ev":"gpio","p":"4","v":1}` (aussi spontané sur entrée) |
-| `{"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}` | clignotement **autonome** : `nb` cycles (0/absent = infini), phases 10 ms…24 h | départ `{…,"v":1,"fx":"loop"}`, fin `{…,"v":0,"fx":"loop","done":true}` |
-| `{"t":"gpio","p":"5","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}` | PWM **matériel** (LEDC) : `duty` 0–100 %, `t_pwm` ms (0/absent = infini), `hz` 10–40000 (défaut 1000) | départ `{…,"fx":"pwm","duty":40}`, fin `{…,"done":true}` |
+| `{"t":"gpio","p":"o1","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout ; `clr` sans `p` = tout éteindre) | `{"id":1,"ev":"gpio","p":"o1","v":1}` (aussi spontané sur entrée) |
+| `{"t":"gpio","p":"o1","a":"loop","t_set":200,"t_clr":800,"nb":5}` | clignotement **autonome** : `nb` cycles (0/absent = infini), phases 10 ms…24 h | départ `{…,"v":1,"fx":"loop"}`, fin `{…,"v":0,"fx":"loop","done":true}` |
+| `{"t":"gpio","p":"o2","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}` | PWM **matériel** (LEDC) : `duty` 0–100 %, `t_pwm` ms (0/absent = infini), `hz` 10–40000 (défaut 1000) | départ `{…,"fx":"pwm","duty":40}`, fin `{…,"done":true}` |
 | `{"t":"stop"}` | arrêt d'urgence **hors file** (séquence, file, touches) ; alias `{"t":"seq","n":"stop"}` | `{"id":0,"st":"ready"}` |
 | — | événements du lien (maître, par esclave) | `{"id":1,"ev":"link","up":true}`, `{"…,"up":false}`, `{"…,"rssi":-62}` (2 s) |
 
@@ -182,7 +182,9 @@ JSON multi-ligne accepté entre STX et ETX). Les réponses se terminent par CR L
 reprennent le format de la dernière commande reçue. Détail : `WEB/Landing/protocole.html`.
 
 **GPIO** : `gpio_panel.h`, table unique `GPIO_TABLE[]` — `BOOT` (GPIO0, bouton intégré),
-sorties `4 5 6 7`, entrées `8 9 10 11` (pull-up, **1 = actif = niveau bas**). Le **maître**
+sorties `o1 o2 o3 o4` (GPIO 4 à 7), entrées `i1 i2 i3 i4` (GPIO 8 à 11 ; pull-up, **1 = actif = niveau bas**).
+Repères **logiques**, numérotés à partir de 1 dans chaque sens : une nouvelle broche prend le
+repère suivant de son sens (`o5`, `i5`…) dans `GPIO_TABLE` et dans `GPIO_OUT`/`GPIO_IN` (app web). Le **maître**
 scrute désormais **ses propres** GPIO (id 0) ; ceux d'un esclave s'adressent par `id`.
 
 ## Tester le lot seul (sans le site web)
@@ -201,7 +203,7 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
 3. S'abonner à **STATUS** (`…-0002`) : les frames sont du **JSON**, ex.
    `{"id":0,"st":"ready"}`, `{"id":0,"st":"busy"}`, `{"id":0,"err":"unmapped"}`.
 4. Nouveautés : `{"t":"ping","n":1}` → `{"id":0,"ev":"pong","n":1}` ; `{"t":"cfg","a":"get"}`
-   → `{"id":0,"ev":"cfg",…}` ; `{"t":"gpio","p":"4","a":"tgl"}` → `{"id":0,"ev":"gpio","p":"4","v":1}`.
+   → `{"id":0,"ev":"cfg",…}` ; `{"t":"gpio","p":"o1","a":"tgl"}` → `{"id":0,"ev":"gpio","p":"o1","v":1}`.
    Routage étoile : ajouter `"id":1` pour viser l'esclave 1. Sur le **port COM** (PuTTY, une
    ligne par commande) : `{"t":"pair","a":"reset"}` libère un esclave.
 
