@@ -324,6 +324,30 @@ hr.sep { border:none; border-top:1px solid var(--border); margin:14px 0; }
 .chip.led.off { background:#4a1d1d; border-color:var(--red); color:#ffb4ae; }
 .cluster .key.gpio { min-width:64px; }
 .key.gpio.on { background:#123021; border-color:var(--green); color:#b7f0c6; }
+/* Effet autonome (clignotement / PWM) exécuté par la carte : bordure qui pulse. */
+.key.gpio.fx { border-color:var(--amber, #d29922); animation:gpiofx 1.2s ease-in-out infinite; }
+@keyframes gpiofx { 50% { box-shadow:0 0 0 3px rgba(210,153,34,.35); } }
+@media (prefers-reduced-motion: reduce) { .key.gpio.fx { animation:none; } }
+/* Appui long sur une sortie : jauge qui se remplit pendant le maintien (≈ LONG_PRESS_MS). */
+.key.gpio { -webkit-touch-callout:none; }
+.key.gpio::after { content:""; position:absolute; left:0; bottom:0; height:3px; width:0; background:var(--accent); }
+.key.gpio.pressing::after { animation:lpress .45s linear forwards; }
+@keyframes lpress { to { width:100%; } }
+
+/* ---- Popup effet GPIO ---- */
+.fx-inner { width:min(440px,94vw); max-height:94dvh; overflow:auto; }
+.fxseg, .fxchips { display:flex; gap:6px; margin-bottom:12px; }
+.fxseg .btn { flex:1; }
+.fxchips { flex-wrap:wrap; }
+.fxchips .btn { flex:1 1 0; min-width:64px; padding:6px 8px; font-size:13px; }
+.fxseg .btn.active, .fxchips .btn.active { background:var(--accent-2); border-color:var(--accent); color:#fff; }
+.fx-inner .sens { display:grid; grid-template-columns:64px 1fr 62px; }
+.fx-inner .sens.wide { grid-template-columns:auto 1fr 62px; }
+.fxval { min-width:62px; text-align:right; font-variant-numeric:tabular-nums; color:var(--text-dim); }
+.fxlabel { font-size:14px; margin:4px 0 6px; }
+.fxpane .hint { margin:2px 0 4px; }
+.fxnote { margin-top:10px; }
+.fxrun { color:var(--amber); margin:-6px 0 10px; }
 .cluster .chip.led { padding:10px 14px; font-size:14px; cursor:default; }
 
 /* GPIO par module : une carte par carte (maître + esclaves), toutes sur un écran */

@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>S3-KBD — Protocole du port COM</title>
+<meta name="description" content="Référence complète du protocole série de S3-KBD : activation, paramètres de liaison, format des commandes et des réponses, codes d'erreur, exemples Python, PowerShell et Bash." />
+<meta name="theme-color" content="#0F1724" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='8' width='56' height='52' rx='12' fill='%23B8400F'/%3E%3Crect x='4' y='4' width='56' height='50' rx='12' fill='%23FF5A1F'/%3E%3Ctext x='14' y='32' font-family='Arial' font-weight='700' font-size='20' fill='%230F1724'%3ES3%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet" />
+<!--
+  Référence du protocole du port COM (USB CDC). Rédigée d'après le firmware :
+  S3/hid_firmware/com_port.h (transport), hid_firmware.ino (dispatch, STATUS),
+  gpio_panel.h, ble_link.h, keymap_azerty.h. À tenir à jour avec eux.
+-->
+<style>
+  :root{
+    --ink:#0F1724; --ink-2:#0A101A; --slate:#253043; --mist:#EEF1F6; --paper:#FAFBFD;
+    --line:#D6DCE6; --muted:#586377; --text:#0F1724;
+    --signal:#FF5A1F; --signal-hi:#FF7C4A; --signal-side:#B8400F; --radio:#4C7DFF;
+    --on-ink:#EEF2F8; --on-ink-muted:#98A4B7; --ink-line:rgba(255,255,255,.09);
+    --code-bg:#0F1724; --code-tx:#DCE3EE;
+    --f-display:"Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-body:"Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --f-mono:"JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --gut:24px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  html,body{margin:0}
+  body{background:var(--paper); color:var(--text); font:16.5px/1.65 var(--f-body); -webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  :focus-visible{outline:3px solid var(--signal); outline-offset:3px; border-radius:6px}
+  .w{max-width:1200px; margin:0 auto; padding:0 var(--gut)}
+
+  /* ---------- Barre haute ---------- */
+  .top{position:sticky; top:0; z-index:20; background:rgba(15,23,36,.94); backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px); color:var(--on-ink); border-bottom:1px solid var(--ink-line)}
+  .top .w{display:flex; align-items:center; gap:22px; height:62px}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none; font:800 18px/1 var(--f-display); font-stretch:120%}
+  .brand i{width:20px; height:20px; border-radius:6px; background:var(--signal); box-shadow:0 3px 0 var(--signal-side)}
+  .docs{display:flex; gap:18px; margin-left:auto; font-size:14.5px}
+  .docs a{text-decoration:none; color:var(--on-ink-muted)}
+  .docs a:hover,.docs a[aria-current]{color:var(--on-ink)}
+  .docs a[aria-current]{border-bottom:2px solid var(--signal); padding-bottom:2px}
+  .kc{display:inline-flex; align-items:center; text-decoration:none; font:750 14px/1 var(--f-display); font-stretch:108%;
+    color:var(--ink); padding:10px 14px 11px; border-radius:10px; background:linear-gradient(180deg,var(--signal-hi),var(--signal) 55%);
+    box-shadow:0 4px 0 var(--signal-side), inset 0 1px 0 rgba(255,255,255,.4); transition:transform .08s, box-shadow .08s}
+  .kc:hover{transform:translateY(2px); box-shadow:0 2px 0 var(--signal-side), inset 0 1px 0 rgba(255,255,255,.4)}
+  .kc:active{transform:translateY(4px); box-shadow:0 0 0 var(--signal-side)}
+
+  /* ---------- En-tête ---------- */
+  .head{background:var(--ink); color:var(--on-ink); padding:56px 0 0}
+  .eyebrow{font:600 12.5px/1 var(--f-mono); text-transform:uppercase; letter-spacing:.12em; color:var(--on-ink-muted);
+    display:flex; align-items:center; gap:10px; margin:0 0 18px}
+  .eyebrow::before{content:""; width:10px; height:10px; border-radius:3px; background:var(--signal); box-shadow:0 2px 0 var(--signal-side)}
+  h1{font-family:var(--f-display); font-stretch:115%; font-weight:800; letter-spacing:-.02em; line-height:1.03;
+    font-size:clamp(34px,4.6vw,58px); margin:0; max-width:16ch}
+  .head .lead{font-size:clamp(16.5px,1.5vw,19px); color:var(--on-ink-muted); max-width:66ch; margin:20px 0 0}
+  .head .lead b{color:var(--on-ink); font-weight:600}
+  .facts{display:grid; grid-template-columns:repeat(5,1fr); margin-top:44px; border-top:1px solid var(--ink-line)}
+  .facts div{padding:18px 18px 22px; border-left:1px solid var(--ink-line)}
+  .facts div:first-child{border-left:0; padding-left:0}
+  .facts dt{font:600 10.5px/1 var(--f-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--on-ink-muted); margin-bottom:8px}
+  .facts dd{margin:0; font-size:14.5px; font-weight:500}
+
+  /* ---------- Mise en page doc ---------- */
+  .doc{display:grid; grid-template-columns:230px minmax(0,1fr); gap:56px; padding-top:48px; padding-bottom:96px}
+  .toc{position:sticky; top:86px; align-self:start; max-height:calc(100vh - 110px); overflow:auto; font-size:14px;
+    line-height:1.45; scrollbar-width:thin}
+  .toc p{font:600 11px/1 var(--f-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 0 12px}
+  .toc ol{list-style:none; margin:0; padding:0; border-left:1px solid var(--line)}
+  .toc li a{display:block; padding:5px 0 5px 14px; margin-left:-1px; border-left:2px solid transparent; text-decoration:none; color:var(--muted)}
+  .toc li a:hover{color:var(--text)}
+  .toc li a.on{color:var(--text); border-left-color:var(--signal); font-weight:600}
+  .toc li.sub a{padding-left:26px; font-size:13px}
+  article{min-width:0; max-width:820px}
+  section{scroll-margin-top:84px}
+  section + section{margin-top:64px}
+  h2{font-family:var(--f-display); font-stretch:110%; font-weight:760; letter-spacing:-.012em; font-size:clamp(25px,2.6vw,32px);
+    line-height:1.12; margin:0 0 14px}
+  h3{font-family:var(--f-display); font-stretch:104%; font-weight:700; font-size:20px; line-height:1.25; margin:40px 0 10px;
+    scroll-margin-top:84px; display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  h3 code{font-size:15px}
+  h3 small{font:500 14.5px var(--f-body); color:var(--muted)}
+  p{margin:0 0 14px}
+  ul.list{margin:0 0 14px; padding-left:20px}
+  ul.list li{margin:5px 0}
+  code{font:500 .88em var(--f-mono); background:var(--mist); border:1px solid #E1E6EE; padding:1px 6px; border-radius:6px; white-space:nowrap}
+  .muted{color:var(--muted)}
+
+  /* ---------- Blocs de code ---------- */
+  .code{position:relative; margin:14px 0 18px}
+  .code pre{margin:0; background:var(--code-bg); color:var(--code-tx); border-radius:12px; padding:16px 18px; overflow-x:auto;
+    font:500 13.5px/1.6 var(--f-mono); tab-size:4}
+  .code .lbl{position:absolute; top:0; left:18px; transform:translateY(-50%); font:600 10.5px/1 var(--f-mono); letter-spacing:.1em;
+    text-transform:uppercase; color:var(--on-ink-muted); background:var(--slate); padding:5px 8px; border-radius:6px}
+  .code .lbl + pre{padding-top:22px}
+  .copy{position:absolute; top:8px; right:8px; font:600 11.5px var(--f-mono); color:var(--on-ink-muted); background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12); border-radius:7px; padding:5px 9px; cursor:pointer}
+  .copy:hover{color:var(--on-ink)}
+  .j-k{color:#9CC2FF} .j-s{color:#FFD29A} .j-n{color:#9FE3B5} .j-b{color:#F5A3D7}
+  .j-out{color:var(--signal-hi); font-weight:700} .j-in{color:#7EE2A8; font-weight:700} .j-c{color:#7D8AA0}
+
+  /* ---------- Tableaux ---------- */
+  .tbl{width:100%; border-collapse:collapse; margin:10px 0 18px; font-size:14.5px}
+  .tbl th{text-align:left; font:600 11px/1.3 var(--f-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+    padding:10px 12px 10px 0; border-bottom:1.5px solid var(--ink)}
+  .tbl td{padding:10px 12px 10px 0; border-bottom:1px solid var(--line); vertical-align:top}
+  .tbl td:first-child{white-space:nowrap}
+  .tblwrap{overflow-x:auto}
+  .req{font:600 10.5px var(--f-mono); color:var(--signal-side); text-transform:uppercase; letter-spacing:.06em}
+
+  /* ---------- Encadrés ---------- */
+  .note{border-left:4px solid var(--radio); background:#EEF3FF; border-radius:0 10px 10px 0; padding:13px 16px; margin:16px 0; font-size:15px}
+  .note.warn{border-left-color:var(--signal); background:#FFF1EB}
+  .note b:first-child{display:block; font-family:var(--f-display); font-stretch:104%; margin-bottom:2px}
+  .note p:last-child{margin:0}
+  .cols{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:14px 0 18px}
+  .cols div{border:1px solid var(--line); border-radius:12px; padding:14px 16px; font-size:14.5px}
+  .cols b{display:block; font:600 11px/1.2 var(--f-mono); text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:6px}
+  .keys{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 16px}
+  .keys code{background:#fff; border:1px solid #CBD3DF; box-shadow:0 2px 0 #CBD3DF; padding:3px 8px}
+
+  footer{background:var(--ink-2); color:var(--on-ink-muted); font-size:14px; padding:30px 0}
+  footer .w{display:flex; flex-wrap:wrap; gap:12px 26px; align-items:center}
+  footer a{color:var(--on-ink); text-decoration:none}
+  footer .sp{flex:1}
+
+  @media (max-width:1000px){
+    .doc{grid-template-columns:1fr; gap:28px}
+    .toc{position:static; max-height:none; border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+    .facts{grid-template-columns:repeat(3,1fr)}
+    .facts div:nth-child(4){border-left:0; padding-left:0}
+    .facts div:nth-child(n+4){border-top:1px solid var(--ink-line)}
+    .docs{display:none}
+    .top .kc{margin-left:auto}
+  }
+  @media (max-width:640px){
+    :root{--gut:16px}
+    body{font-size:16px}
+    .facts{grid-template-columns:1fr 1fr}
+    .facts div,.facts div:nth-child(4){border-left:1px solid var(--ink-line); padding-left:14px}
+    .facts div:nth-child(odd){border-left:0; padding-left:0}
+    .facts div:nth-child(n+3){border-top:1px solid var(--ink-line)}
+    .cols{grid-template-columns:1fr}
+    .tbl td:first-child{white-space:normal}
+    .code pre{font-size:12.5px}
+    article p code,article li code,.note code{white-space:normal; overflow-wrap:anywhere}
+  }
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} .kc{transition:none} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="w">
+    <a class="brand" href="landing.html"><i aria-hidden="true"></i>S3-KBD</a>
+    <nav class="docs" aria-label="Documentation">
+      <a href="notice.html">Notice technique</a>
+      <a href="protocole.html" aria-current="page">Protocole COM</a>
+    </nav>
+    <a class="kc" href="landing.html#je-veux">Je veux mon S3-KBD</a>
+  </div>
+</header>
+
+<div class="head">
+  <div class="w">
+    <p class="eyebrow">Documentation · référence</p>
+    <h1>Protocole du port COM</h1>
+    <p class="lead">Piloter S3-KBD depuis un script, un automate ou un terminal&nbsp;: <b>une ligne JSON par commande</b>,
+      <b>une ligne JSON par réponse</b>. C'est le même protocole qu'en Bluetooth et en Wi-Fi&nbsp;; cette page détaille
+      chaque commande et tout ce qui est propre au port série.</p>
+    <dl class="facts">
+      <div><dt>Transport</dt><dd>USB série virtuelle (CDC)</dd></div>
+      <div><dt>Débit</dt><dd>Ignoré · 115200 conseillé</dd></div>
+      <div><dt>Tramage</dt><dd>Ligne (CR / LF) ou STX…ETX</dd></div>
+      <div><dt>Commande</dt><dd>600 octets max</dd></div>
+      <div><dt>Réponse</dt><dd>512 octets max</dd></div>
+    </dl>
+  </div>
+</div>
+
+<div class="w doc">
+  <nav class="toc" aria-label="Sommaire">
+    <p>Sommaire</p>
+    <ol>
+      <li><a href="#essentiel">L'essentiel</a></li>
+      <li><a href="#activer">Activer le port</a></li>
+      <li><a href="#liaison">Paramètres de liaison</a></li>
+      <li class="sub"><a href="#tramage">Tramage STX / ETX</a></li>
+      <li><a href="#trame">Format d'une commande</a></li>
+      <li><a href="#reponses">Réponses</a></li>
+      <li><a href="#commandes">Commandes</a></li>
+      <li class="sub"><a href="#c-char">char</a></li>
+      <li class="sub"><a href="#c-txt">txt</a></li>
+      <li class="sub"><a href="#c-key">key</a></li>
+      <li class="sub"><a href="#c-seq">seq</a></li>
+      <li class="sub"><a href="#c-stop">stop</a></li>
+      <li class="sub"><a href="#c-mouse">mouse</a></li>
+      <li class="sub"><a href="#c-ping">ping</a></li>
+      <li class="sub"><a href="#c-gpio">gpio</a></li>
+      <li class="sub"><a href="#c-cfg">cfg</a></li>
+      <li class="sub"><a href="#c-sec">sec</a></li>
+      <li class="sub"><a href="#c-name">name</a></li>
+      <li class="sub"><a href="#c-pair">pair</a></li>
+      <li><a href="#erreurs">Codes d'erreur</a></li>
+      <li><a href="#evenements">Événements spontanés</a></li>
+      <li><a href="#file">File, cadence et STOP</a></li>
+      <li><a href="#redemarrages">Redémarrages</a></li>
+      <li><a href="#etoile">Piloter une étoile</a></li>
+      <li><a href="#exemples">Exemples</a></li>
+      <li><a href="#limites">Limites</a></li>
+    </ol>
+  </nav>
+
+  <article>
+
+<!-- ============================================================ -->
+<section id="essentiel">
+  <h2>L'essentiel</h2>
+  <p>Chaque ligne envoyée au module est un objet JSON terminé par une fin de ligne (CR, LF ou CRLF). Le module répond,
+    quand il a quelque chose à dire, par des objets JSON sur des lignes distinctes, terminées par CR LF. Les automates
+    peuvent aussi encadrer chaque commande par <a href="#tramage">STX et ETX</a>. Dans les exemples,
+    <span class="j-out" style="color:var(--signal-side)">→</span> est envoyé par l'hôte,
+    <span style="color:#2E9E5B; font-weight:700">←</span> est reçu du module.</p>
+  <div class="code"><span class="lbl">Échange type</span><pre class="json">→ {"t":"txt","v":"Bonjour, café à 5 € !"}
+← {"id":0,"st":"busy"}
+← {"id":0,"st":"ready"}
+→ {"t":"char","v":"s","m":1}
+→ {"t":"ping","n":1}
+← {"id":0,"ev":"pong","n":1}</pre></div>
+  <p>La deuxième commande (<b>Ctrl+S</b>) ne produit aucune réponse&nbsp;: une frappe réussie n'est pas acquittée.
+    Le <code>ping</code> final sert de barrière&nbsp;: son <code>pong</code> n'arrive qu'une fois toutes les commandes
+    précédentes exécutées (voir <a href="#reponses">Réponses</a>).</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="activer">
+  <h2>Activer le port COM</h2>
+  <p>En sortie d'usine, le port COM est <b>désactivé</b>&nbsp;: un module neuf ne se présente que comme un clavier et une
+    souris. Pour l'activer&nbsp;:</p>
+  <ul class="list">
+    <li>depuis l'application&nbsp;: <b>Réglages ⚙️ → Fonctions → Port COM (série)</b>, puis <b>Enregistrer &amp; redémarrer</b>&nbsp;;</li>
+    <li>ou par le Bluetooth / le Wi-Fi, avec la commande <code>{"t":"cfg","a":"set","serial":true}</code>.</li>
+  </ul>
+  <p>Le module redémarre et le port apparaît sur la machine où il est branché. Pour le désactiver, envoyez
+    <code>{"t":"cfg","a":"set","serial":false}</code> — y compris par le port COM lui-même, qui disparaît au redémarrage.</p>
+  <div class="note warn"><b>Aucun garde-fou côté module</b>
+    <p>L'application web refuse d'enregistrer une configuration sans canal de commande (Wi-Fi, COM ou BLE). Le module,
+      lui, applique ce qu'il reçoit&nbsp;: un script qui coupe les trois le rend injoignable. Seul le
+      <b>reset d'usine</b> (bouton BOOT maintenu 20 s) le récupère alors.</p></div>
+
+  <h3 id="identification">Identification USB</h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Valeur</th><th>Remarque</th></tr></thead>
+    <tbody>
+      <tr><td>Vendor ID</td><td><code>0x303A</code></td><td>Espressif</td></tr>
+      <tr><td>Product ID</td><td><code>0x8161</code></td><td>Identique quelle que soit la configuration</td></tr>
+      <tr><td>Produit / fabricant</td><td><code>S3-KBD</code></td><td></td></tr>
+      <tr><td>N° de série</td><td><code>S3KBD-KMS</code></td><td><code>K</code> clavier, <code>M</code> souris, <code>S</code> port COM&nbsp;;
+        <code>x</code> à la place d'une lettre désactivée (ex. <code>S3KBD-xxS</code>). Change avec les réglages&nbsp;: Windows peut
+        alors attribuer un autre numéro de COM.</td></tr>
+      <tr><td>Interface</td><td>CDC-ACM</td><td>Interface 0, à côté du HID clavier/souris. Aucun pilote à installer.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="cols">
+    <div><b>Windows</b>Un nouveau <code>COMn</code> apparaît dans le Gestionnaire de périphériques, rubrique «&nbsp;Ports (COM et LPT)&nbsp;».</div>
+    <div><b>Linux / Raspberry Pi</b><code>/dev/ttyACM0</code> (ou suivant). L'utilisateur doit appartenir au groupe <code>dialout</code>.</div>
+    <div><b>macOS</b><code>/dev/cu.usbmodem…</code> — préférez <code>cu.</code> à <code>tty.</code> pour ouvrir le port.</div>
+  </div>
+  <p>Pour le retrouver par programme, filtrez sur le couple VID/PID (voir l'<a href="#ex-python">exemple Python</a>).</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="liaison">
+  <h2>Paramètres de liaison</h2>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Paramètre</th><th>Valeur</th><th>Détail</th></tr></thead>
+    <tbody>
+      <tr><td>Débit</td><td>Ignoré</td><td>Le lien est de l'USB&nbsp;: 115200 ou 9600 bauds, 8N1, conviennent. Évitez 1200 bauds,
+        vitesse conventionnellement réservée au passage d'une carte en mode téléchargement.</td></tr>
+      <tr><td>Contrôle de flux</td><td>Aucun</td><td>Ni RTS/CTS, ni XON/XOFF.</td></tr>
+      <tr><td>DTR</td><td>Actif</td><td>Le module n'émet vers l'hôte que si le port est déclaré ouvert (DTR). C'est le
+        comportement par défaut de pyserial, PuTTY, miniterm ou Tera Term.</td></tr>
+      <tr><td>Encodage</td><td>UTF-8</td><td>Sans BOM. Les accents et <code>€</code> s'envoient tels quels.</td></tr>
+      <tr><td>Fin de ligne</td><td>CR, LF ou CRLF</td><td>Chacun termine la commande&nbsp;: un terminal qui n'envoie qu'un retour
+        chariot (PuTTY) fonctionne tel quel. Une ligne vide est ignorée.</td></tr>
+      <tr><td>Trame</td><td>STX … ETX</td><td>Forme alternative, reconnue en permanence&nbsp;: voir <a href="#tramage">Tramage STX / ETX</a>.</td></tr>
+      <tr><td>Longueur</td><td>600 octets</td><td>Maximum par commande, fin de ligne ou STX/ETX non compris. Au-delà, la commande
+        entière est rejetée&nbsp;: <code>{"id":0,"err":"toolong"}</code>.</td></tr>
+      <tr><td>Écho</td><td>Aucun</td><td>Le module ne renvoie pas ce que vous tapez&nbsp;: activez l'écho local du terminal si besoin.</td></tr>
+      <tr><td>Réponses</td><td>1 par ligne</td><td>Objet JSON terminé par CR LF, 512 octets au plus&nbsp;; encadré par STX / ETX si la
+        dernière commande reçue l'était.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="tramage">Tramage STX / ETX <small>pour les automates</small></h3>
+  <p>En plus des lignes, le module reconnaît en permanence des commandes encadrées&nbsp;:</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Octet</th><th>Hex</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td>STX</td><td><code>0x02</code></td><td>Début de trame. Tout reste d'une commande incomplète est jeté&nbsp;: le module repart
+        proprement après un envoi interrompu (programme arrêté en cours d'écriture, câble débranché…).</td></tr>
+      <tr><td>JSON</td><td>—</td><td>La commande. Entre STX et ETX, les sauts de ligne sont de simples espaces&nbsp;: un JSON
+        indenté sur plusieurs lignes est accepté.</td></tr>
+      <tr><td>ETX</td><td><code>0x03</code></td><td>Fin de trame&nbsp;: la commande est exécutée.</td></tr>
+      <tr><td>CR LF</td><td><code>0x0D 0x0A</code></td><td>Facultatifs après ETX (ignorés).</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><span class="lbl">Octets échangés</span><pre>→ 02 {"t":"ping","n":1} 03 0D 0A
+← 02 {"id":0,"ev":"pong","n":1} 03 0D 0A</pre></div>
+  <p>Les réponses adoptent le format de la <b>dernière commande reçue</b> sur le port&nbsp;: après une trame, elles sont
+    encadrées (<code>STX JSON ETX CR LF</code>)&nbsp;; après une ligne, elles redeviennent des lignes (<code>JSON CR LF</code>).
+    Le JSON n'autorise aucun caractère de contrôle brut dans ses chaînes&nbsp;: STX et ETX ne peuvent jamais apparaître
+    dans une commande valide.</p>
+  <div class="note"><b>Faut-il l'utiliser&nbsp;?</b>
+    <p>Le lien USB détecte et corrige déjà les erreurs de transmission&nbsp;: le tramage n'ajoute pas de contrôle d'intégrité.
+      Il apporte une délimitation explicite, pratique pour les automates qui parlent déjà STX/ETX, et une resynchronisation
+      garantie. Pour un terminal ou un script simple, la ligne suffit.</p></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="trame">
+  <h2>Format d'une commande</h2>
+  <p>Un objet JSON par ligne. Seul le champ <code>t</code> (type de commande) est obligatoire&nbsp;; les champs inconnus
+    sont ignorés. Les nombres sont des entiers JSON.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td><code>t</code> <span class="req">requis</span></td><td>chaîne</td><td>Type&nbsp;: <code>char</code>, <code>txt</code>, <code>key</code>,
+        <code>seq</code>, <code>stop</code>, <code>mouse</code>, <code>ping</code>, <code>gpio</code>, <code>cfg</code>, <code>sec</code>, <code>name</code>, <code>pair</code>.</td></tr>
+      <tr><td><code>id</code></td><td>entier</td><td>Module visé dans une étoile&nbsp;: <code>0</code> (défaut) = ce module, <code>1</code> à <code>3</code> = esclave
+        (voir <a href="#etoile">Piloter une étoile</a>). <code>cfg</code>, <code>pair</code>, <code>sec</code> et <code>name</code> restent locales.</td></tr>
+      <tr><td><code>m</code></td><td>entier</td><td>Modificateurs ajoutés à la frappe (<code>char</code>, <code>key</code>, étapes de <code>seq</code>).</td></tr>
+    </tbody>
+  </table></div>
+  <h3 id="masque">Masque des modificateurs <small>champ <code>m</code></small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Bit</th><th>Valeur</th><th>Touche</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td><code>1</code></td><td>Ctrl</td></tr>
+      <tr><td>1</td><td><code>2</code></td><td>Maj (Shift)</td></tr>
+      <tr><td>2</td><td><code>4</code></td><td>Alt</td></tr>
+      <tr><td>3</td><td><code>8</code></td><td>Windows / Cmd (GUI)</td></tr>
+      <tr><td>4</td><td><code>16</code></td><td>AltGr</td></tr>
+    </tbody>
+  </table></div>
+  <p>Les bits se cumulent&nbsp;: Ctrl+Maj = <code>3</code>, Ctrl+Alt = <code>5</code>. Une ligne qui n'est pas du JSON valide
+    renvoie <code>{"id":0,"err":"json"}</code>&nbsp;; un <code>t</code> absent ou inconnu renvoie <code>{"id":0,"err":"type"}</code>.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="reponses">
+  <h2>Réponses</h2>
+  <p>Chaque réponse est un objet JSON portant <code>id</code> — <code>0</code> pour ce module (ou le maître), <code>1</code> à
+    <code>3</code> pour un esclave relayé — et <b>un seul</b> des discriminants suivants&nbsp;:</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Discriminant</th><th>Valeurs</th><th>Exemple</th></tr></thead>
+    <tbody>
+      <tr><td><code>st</code> — état</td><td><code>busy</code>, <code>ready</code></td><td><code>{"id":0,"st":"busy"}</code></td></tr>
+      <tr><td><code>err</code> — erreur</td><td>voir <a href="#erreurs">Codes d'erreur</a></td><td><code>{"id":0,"err":"unmapped"}</code></td></tr>
+      <tr><td><code>ev</code> — événement</td><td><code>pong</code>, <code>gpio</code>, <code>cfg</code>, <code>sec</code>, <code>name</code>,
+        <code>scan</code>, <code>pair</code>, <code>link</code>, <code>sys</code></td><td><code>{"id":0,"ev":"pong","n":7}</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>Le port COM reçoit tout</b>
+    <p>Les réponses sont diffusées sur tous les canaux à la fois&nbsp;: le port COM reçoit aussi celles des commandes
+      venues du Bluetooth, du Wi-Fi, du bouton BOOT ou d'une entrée GPIO. Aucune réponse ne porte de numéro de requête,
+      sauf le <code>pong</code> (champ <code>n</code>)&nbsp;: filtrez sur le contenu.</p></div>
+  <h3 id="accuses">Ce qui est acquitté, et ce qui ne l'est pas</h3>
+  <ul class="list">
+    <li><code>char</code>, <code>key</code> et <code>mouse</code> réussis ne renvoient <b>rien</b>&nbsp;; seules leurs erreurs sont signalées.</li>
+    <li><code>txt</code> et <code>seq</code> sont encadrés par <code>busy</code> puis <code>ready</code> (y compris après une erreur).</li>
+    <li><code>ping</code>, <code>gpio</code>, <code>cfg</code>, <code>sec</code>, <code>name</code> et <code>pair</code> répondent par un événement.</li>
+  </ul>
+  <p>Les commandes étant exécutées une à une, dans l'ordre, un <code>{"t":"ping","n":N}</code> sert de <b>barrière de
+    synchronisation</b>&nbsp;: la réception de <code>{"id":0,"ev":"pong","n":N}</code> garantit que tout ce qui précède est
+    terminé. C'est aussi la mesure de latence la plus simple.</p>
+  <div class="note warn"><b>Lisez le port en continu</b>
+    <p>Le module garde au plus 16 réponses en attente d'envoi et n'attend l'hôte que 20&nbsp;ms. Si le port est ouvert sans
+      être lu, les réponses suivantes sont perdues sans avertissement.</p></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="commandes">
+  <h2>Commandes</h2>
+  <p>Chaque commande est décrite avec ses champs, ses réponses et des exemples prêts à copier.</p>
+
+  <!-- ---- char ---- -->
+  <h3 id="c-char"><code>char</code> <small>taper un caractère</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>v</code> <span class="req">requis</span></td><td>chaîne</td><td>Le caractère. Seul le premier caractère est utilisé.</td></tr>
+      <tr><td><code>m</code></td><td>entier</td><td>Modificateurs ajoutés (raccourcis).</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"char","v":"é"}
+→ {"t":"char","v":"c","m":1}      <span class="j-c">// Ctrl+C</span>
+→ {"t":"char","v":"T","m":1}      <span class="j-c">// Ctrl+Maj+T (la majuscule porte déjà Maj)</span>
+→ {"t":"char","v":"r","m":8}      <span class="j-c">// Win+R</span></pre></div>
+  <p><b>Réponse</b>&nbsp;: aucune si la frappe réussit. Erreurs&nbsp;: <code>unmapped</code> (caractère absent de la disposition AZERTY),
+    <code>empty</code> (<code>v</code> vide), <code>nohid</code> (clavier désactivé).</p>
+  <p>La traduction en touches est faite <b>par le module</b>&nbsp;: la machine cible doit être réglée en <b>AZERTY français</b>
+    (Windows ou Linux). Couverts&nbsp;: lettres, chiffres, ponctuation du clavier français, <code>é è à ç ù</code>, <code>€ £ ¤ µ § °</code>,
+    et les accents à touche morte <code>â ê î ô û ä ë ï ö ü ÿ</code> (deux frappes chacun). <code>^ ¨ ` ~</code> seuls sont tapés
+    «&nbsp;touche morte + espace&nbsp;». Les majuscules accentuées (<code>É</code>, <code>À</code>…) ne sont pas couvertes.</p>
+
+  <!-- ---- txt ---- -->
+  <h3 id="c-txt"><code>txt</code> <small>taper une chaîne</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>v</code> <span class="req">requis</span></td><td>chaîne</td><td>Texte UTF-8. <code>\n</code> tape Entrée, <code>\t</code> tape Tab,
+        <code>\r</code> est ignoré.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"txt","v":"Réunion à 14h30\n"}
+← {"id":0,"st":"busy"}
+← {"id":0,"st":"ready"}
+→ {"t":"txt","v":"Élan"}
+← {"id":0,"st":"busy"}
+← {"id":0,"err":"unmapped:U+00C9"}
+← {"id":0,"st":"ready"}</pre></div>
+  <p><b>Réponse</b>&nbsp;: <code>busy</code>, puis <code>ready</code> une fois le texte tapé. Un caractère non couvert est sauté et
+    signalé par <code>unmapped:U+XXXX</code> (son point de code)&nbsp;; le reste du texte est tapé. Erreur&nbsp;: <code>nohid</code>.</p>
+  <p><b>Cadence</b>&nbsp;: environ 16&nbsp;ms par frappe, soit ≈&nbsp;60 caractères par seconde (deux frappes pour un accent à touche
+    morte). <b>Longueur</b>&nbsp;: la ligne JSON complète ne dépasse pas 600 octets — environ 560 caractères ASCII, moins avec des
+    accents (2 octets chacun). Découpez les textes longs en plusieurs <code>txt</code>.</p>
+
+  <!-- ---- key ---- -->
+  <h3 id="c-key"><code>key</code> <small>touche nommée, modificateur ou touche média</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>c</code> <span class="req">requis</span></td><td>chaîne</td><td>Nom de la touche (listes ci-dessous).</td></tr>
+      <tr><td><code>a</code></td><td>chaîne</td><td><code>tap</code> (défaut)&nbsp;: appui + relâchement. <code>down</code>&nbsp;: maintenir. <code>up</code>&nbsp;: relâcher.</td></tr>
+      <tr><td><code>m</code></td><td>entier</td><td>Modificateurs ajoutés (touches nommées uniquement).</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Touches nommées</b></p>
+  <div class="keys"><code>Enter</code><code>Escape</code><code>Backspace</code><code>Tab</code><code>Space</code><code>Delete</code><code>Insert</code>
+    <code>CapsLock</code><code>ArrowUp</code><code>ArrowDown</code><code>ArrowLeft</code><code>ArrowRight</code><code>Home</code><code>End</code>
+    <code>PageUp</code><code>PageDown</code><code>PrintScreen</code><code>ScrollLock</code><code>Pause</code><code>ContextMenu</code>
+    <code>NumLock</code><code>F1</code>…<code>F12</code></div>
+  <p><b>Modificateurs seuls</b> — pour composer un raccourci touche à touche avec <code>down</code> / <code>up</code></p>
+  <div class="keys"><code>ControlLeft</code><code>ShiftLeft</code><code>AltLeft</code><code>MetaLeft</code><code>AltRight</code>
+    <code>ControlRight</code><code>ShiftRight</code><code>MetaRight</code></div>
+  <p><b>Touches média</b> — toujours en appui bref, <code>a</code> et <code>m</code> ignorés</p>
+  <div class="keys"><code>MediaPlayPause</code><code>MediaVolumeUp</code><code>MediaVolumeDown</code><code>MediaMute</code>
+    <code>MediaNext</code><code>MediaPrevious</code><code>MediaHome</code><code>MediaBack</code></div>
+  <div class="code"><pre class="json">→ {"t":"key","c":"Enter"}
+→ {"t":"key","c":"F4","m":4}                  <span class="j-c">// Alt+F4</span>
+→ {"t":"key","c":"Escape","m":3}              <span class="j-c">// Ctrl+Maj+Échap</span>
+→ {"t":"key","c":"ShiftLeft","a":"down"}      <span class="j-c">// maintenir Maj…</span>
+→ {"t":"key","c":"ArrowDown"}                 <span class="j-c">// …sélectionner…</span>
+→ {"t":"key","c":"ShiftLeft","a":"up"}        <span class="j-c">// …relâcher</span>
+→ {"t":"key","c":"MediaVolumeUp"}</pre></div>
+  <p><b>Réponse</b>&nbsp;: aucune si la frappe réussit. Erreurs&nbsp;: <code>unmapped</code> (nom inconnu — un caractère simple
+    comme <code>"a"</code> passe par <code>char</code>), <code>nohid</code>.</p>
+  <p>Six touches au plus peuvent être maintenues en même temps. Une touche maintenue le reste jusqu'à son <code>up</code>, un
+    <a href="#file">STOP</a> ou la fin d'une <code>seq</code>&nbsp;: pensez à la relâcher.</p>
+
+  <!-- ---- seq ---- -->
+  <h3 id="c-seq"><code>seq</code> <small>séquences temporisées</small></h3>
+  <p>Trois formes, selon le champ présent&nbsp;:</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Forme</th><th>Syntaxe</th><th>Effet</th></tr></thead>
+    <tbody>
+      <tr><td>Prédéfinie</td><td><code>{"t":"seq","n":"alt_tab"}</code></td><td><code>ctrl_alt_del</code> (Ctrl+Alt+Suppr), <code>ctrl_esc</code> (Ctrl+Échap),
+        <code>alt_tab</code>, <code>alt_f4</code>, <code>win_d</code> (Win+D).</td></tr>
+      <tr><td>Personnalisée</td><td><code>{"t":"seq","s":[…]}</code></td><td>Liste d'étapes exécutées dans l'ordre (ci-dessous).</td></tr>
+      <tr><td>Arrêt</td><td><code>{"t":"seq","n":"stop"}</code></td><td>Ancienne forme de <a href="#c-stop"><code>stop</code></a>, toujours acceptée.</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Étapes d'une séquence personnalisée</b></p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Étape</th><th>Effet</th></tr></thead>
+    <tbody>
+      <tr><td><code>{"tap":"a"}</code></td><td>Un seul caractère → frappe du caractère&nbsp;; deux caractères ou plus → touche nommée
+        (<code>"Enter"</code>, <code>"F5"</code>…). Un nombre est accepté (<code>{"tap":1}</code> tape <code>1</code>). <code>m</code> facultatif.</td></tr>
+      <tr><td><code>{"wait":1000}</code></td><td>Pause en millisecondes, interruptible par STOP (granularité 20&nbsp;ms).</td></tr>
+      <tr><td><code>{"rep":3,"every":4000,"tap":"3"}</code></td><td>Répète <code>tap</code> <code>rep</code> fois, avec <code>every</code> ms entre deux
+        frappes (pas après la dernière). <code>m</code> facultatif.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"seq","s":[{"tap":"F5"},{"wait":2000},{"rep":5,"every":8000,"tap":"ArrowRight"}]}
+← {"id":0,"st":"busy"}
+← {"id":0,"st":"ready"}</pre></div>
+  <p><b>Réponse</b>&nbsp;: <code>busy</code> … <code>ready</code>. Erreurs&nbsp;: <code>seq</code> (nom inconnu, ni <code>n</code> ni <code>s</code>),
+    <code>unmapped</code> (étape non couverte, la séquence continue), <code>nohid</code>. Toutes les touches sont relâchées en fin de séquence.
+    Le tempo est tenu par l'horloge du module&nbsp;: la latence du lien ne déforme pas les délais. Pendant une séquence,
+    les commandes suivantes attendent leur tour dans la file.</p>
+
+  <!-- ---- stop ---- -->
+  <h3 id="c-stop"><code>stop</code> <small>arrêt d'urgence, hors file</small></h3>
+  <div class="code"><pre class="json">→ {"t":"stop"}
+← {"id":0,"st":"ready"}</pre></div>
+  <p>N'attend pas son tour&nbsp;: interrompt la séquence ou le texte en cours, <b>vide la file</b> des commandes en attente et
+    relâche toutes les touches. Sur un maître, l'arrêt est aussi transmis à tous les esclaves (<code>id</code> ignoré).
+    L'ancienne forme <code>{"t":"seq","n":"stop"}</code> reste acceptée. Les effets GPIO ne sont pas concernés&nbsp;:
+    <code>{"t":"gpio","a":"clr"}</code> les arrête. Détails dans <a href="#stop">STOP, hors file</a>.</p>
+
+  <!-- ---- mouse ---- -->
+  <h3 id="c-mouse"><code>mouse</code> <small>déplacement, molette, boutons</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>dx</code>, <code>dy</code></td><td>entier</td><td>Déplacement relatif (vers la droite / vers le bas si positif). Les grandes valeurs
+        sont découpées en pas de ±127.</td></tr>
+      <tr><td><code>w</code></td><td>entier</td><td>Molette verticale (positif = vers le haut).</td></tr>
+      <tr><td><code>b</code></td><td>chaîne</td><td>Bouton&nbsp;: <code>left</code>, <code>right</code>, <code>middle</code>.</td></tr>
+      <tr><td><code>a</code></td><td>chaîne</td><td>Action du bouton&nbsp;: <code>click</code> (défaut), <code>dbl</code> (double-clic), <code>down</code>, <code>up</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Un message fait <b>soit</b> un déplacement / une molette, <b>soit</b> une action de bouton&nbsp;: si <code>dx</code>, <code>dy</code>
+    ou <code>w</code> est présent, <code>b</code> est ignoré.</p>
+  <div class="code"><pre class="json">→ {"t":"mouse","dx":120,"dy":-40}
+→ {"t":"mouse","w":-3}                       <span class="j-c">// 3 crans vers le bas</span>
+→ {"t":"mouse","b":"left","a":"down"}        <span class="j-c">// glisser-déposer :</span>
+→ {"t":"mouse","dx":200}
+→ {"t":"mouse","b":"left","a":"up"}</pre></div>
+  <p><b>Réponse</b>&nbsp;: aucune si l'action réussit. Erreurs&nbsp;: <code>mouse</code> (bouton inconnu, message vide), <code>nohid</code> (souris désactivée).</p>
+
+  <!-- ---- ping ---- -->
+  <h3 id="c-ping"><code>ping</code> <small>test de liaison et barrière</small></h3>
+  <div class="code"><pre class="json">→ {"t":"ping","n":12}
+← {"id":0,"ev":"pong","n":12}
+→ {"t":"ping","n":13,"id":1}                  <span class="j-c">// routé vers l'esclave 1</span>
+← {"id":1,"ev":"pong","n":13}</pre></div>
+  <p><code>n</code> est un entier libre (défaut <code>0</code>), renvoyé tel quel. Utilisez un <code>n</code> différent à chaque appel pour
+    associer chaque <code>pong</code> à son <code>ping</code>.</p>
+
+  <!-- ---- gpio ---- -->
+  <h3 id="c-gpio"><code>gpio</code> <small>entrées / sorties du module</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>p</code></td><td><b>chaîne</b></td><td>Repère de la broche&nbsp;: <code>"4"</code> <code>"5"</code> <code>"6"</code> <code>"7"</code> (sorties),
+        <code>"8"</code> <code>"9"</code> <code>"10"</code> <code>"11"</code> (entrées), <code>"BOOT"</code> (bouton intégré, entrée).
+        Toujours entre guillemets. Absent&nbsp;: toutes les broches (<code>read</code> ou <code>clr</code> seulement).</td></tr>
+      <tr><td><code>a</code></td><td>chaîne</td><td><code>read</code> (défaut), <code>set</code> (niveau haut), <code>clr</code> (niveau bas),
+        <code>tgl</code> (inverser), <code>loop</code> (clignotement autonome), <code>pwm</code> (PWM autonome). Écriture sur les sorties uniquement.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"gpio","p":"4","a":"set"}
+← {"id":0,"ev":"gpio","p":"4","v":1}
+→ {"t":"gpio","a":"read"}                     <span class="j-c">// 9 réponses, une par broche</span>
+← {"id":0,"ev":"gpio","p":"BOOT","v":0}
+← {"id":0,"ev":"gpio","p":"4","v":1}
+<span class="j-c">  …</span>
+→ {"t":"gpio","p":"6","a":"tgl","id":2}      <span class="j-c">// sortie 6 de l'esclave 2</span>
+← {"id":2,"ev":"gpio","p":"6","v":1}</pre></div>
+  <ul class="list">
+    <li><b>Sorties</b>&nbsp;: <code>v:1</code> = 3,3&nbsp;V. Toutes à <code>0</code> au démarrage. <code>{"t":"gpio","a":"clr"}</code> sans
+      <code>p</code> éteint toutes les sorties et arrête tous les effets (une réponse par sortie).</li>
+    <li><b>Entrées</b>&nbsp;: résistance de rappel au 3,3&nbsp;V, actives à l'état bas&nbsp;: <code>v:1</code> = contact fermé vers la masse
+      (bouton pressé). Chaque changement est signalé <b>spontanément</b>, après un anti-rebond d'environ 60&nbsp;ms.</li>
+    <li><b>Erreur</b> <code>gpio</code>&nbsp;: fonction GPIO désactivée, broche inconnue (ou <code>p</code> numérique), écriture sur une entrée,
+      action inconnue, paramètre d'effet absent ou hors limites.</li>
+  </ul>
+
+  <h3 id="gpio-effets">Effets autonomes <small>clignotement et PWM exécutés par la carte</small></h3>
+  <p>Pour un changement d'état fréquent et répétitif, inutile d'envoyer une commande par transition&nbsp;: une seule commande
+    lance l'effet, la carte visée l'exécute seule. Le lien radio ne transporte que deux réponses, au départ et à la fin.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Action</th><th>Champ</th><th>Limites</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="3"><code>loop</code></td><td><code>t_set</code> <span class="req">requis</span></td><td>10 ms à 24 h</td><td>Durée de l'état haut, en millisecondes.</td></tr>
+      <tr><td><code>t_clr</code> <span class="req">requis</span></td><td>10 ms à 24 h</td><td>Durée de l'état bas, en millisecondes.</td></tr>
+      <tr><td><code>nb</code></td><td>entier ≥ 0</td><td>Nombre de cycles (haut puis bas). <code>0</code> ou absent&nbsp;: sans fin.</td></tr>
+      <tr><td rowspan="3"><code>pwm</code></td><td><code>duty</code> <span class="req">requis</span></td><td>0 à 100</td><td>Rapport cyclique, en %. <code>0</code> et <code>100</code> donnent un niveau fixe.</td></tr>
+      <tr><td><code>t_pwm</code></td><td>0 à 24 h</td><td>Durée en millisecondes. <code>0</code> ou absent&nbsp;: sans fin.</td></tr>
+      <tr><td><code>hz</code></td><td>10 à 40 000</td><td>Fréquence (défaut <code>1000</code>). Résolution réglée automatiquement&nbsp;: 14 bits (16 384 pas) jusqu'à
+        2,4 kHz, puis dégressive jusqu'à 9 bits (512 pas) à 40 kHz.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}
+← {"id":0,"ev":"gpio","p":"4","v":1,"fx":"loop"}
+<span class="j-c">  … 5 éclats de 200 ms, une seconde d'intervalle, sans aucune trame …</span>
+← {"id":0,"ev":"gpio","p":"4","v":0,"fx":"loop","done":true}
+→ {"t":"gpio","p":"5","a":"pwm","duty":25,"t_pwm":3000,"id":2}   <span class="j-c">// sur l'esclave 2</span>
+← {"id":2,"ev":"gpio","p":"5","v":1,"fx":"pwm","duty":25}
+← {"id":2,"ev":"gpio","p":"5","v":0,"fx":"pwm","done":true}     <span class="j-c">// 3 s plus tard</span></pre></div>
+  <ul class="list">
+    <li><b>Une nouvelle commande interrompt la commande en cours</b>&nbsp;: <code>set</code>, <code>clr</code>, <code>tgl</code>,
+      <code>loop</code> ou <code>pwm</code> sur une sortie arrête son effet et applique la nouvelle consigne. <code>read</code> n'interrompt rien
+      (sa réponse porte <code>fx</code> si un effet tourne). Une commande refusée (<code>err:gpio</code>) laisse l'effet en place.</li>
+    <li><b>Chaque sortie a son propre effet</b>&nbsp;: les quatre sorties peuvent clignoter ou moduler en même temps, à des rythmes
+      différents, sur chaque module de l'étoile.</li>
+    <li><b>Fin</b>&nbsp;: quand <code>nb</code> cycles ou <code>t_pwm</code> sont écoulés, la sortie revient à <code>0</code> et la réponse porte
+      <code>"done":true</code>. Un effet interrompu ne produit pas de <code>done</code>&nbsp;: la réponse de la nouvelle commande en tient lieu.</li>
+    <li><b>Charge</b>&nbsp;: une seule tâche gère toutes les sorties et dort jusqu'à la prochaine échéance — deux réveils par cycle de
+      clignotement, aucun pendant un PWM, produit par le matériel. Le clavier, la souris et les liaisons n'en sont pas ralentis.</li>
+    <li><b>Précision</b>&nbsp;: le rythme est tenu par l'horloge de la carte, à la milliseconde près, indépendamment de la liaison.</li>
+    <li>Le <a href="#c-stop"><code>stop</code></a> clavier n'arrête pas les effets GPIO.</li>
+  </ul>
+
+  <!-- ---- cfg ---- -->
+  <h3 id="c-cfg"><code>cfg</code> <small>lire et écrire les réglages</small> </h3>
+  <p>Toujours exécutée sur le module qui la reçoit (<code>id</code> ignoré).</p>
+  <div class="code"><pre class="json">→ {"t":"cfg","a":"get"}
+← {"id":0,"ev":"cfg","hid_kb":1,"hid_ms":1,"serial":1,"gpio":1,"pair":1,"ble":1,"wifi":1,"boot5":1,"bootrst":1,
+   "role":1,"mac":"aa:bb:cc:dd:ee:ff","self":0,"name":"Bureau","pkset":0,"wifiset":1,"peer":"",
+   "slaves":[{"id":1,"mac":"11:22:33:44:55:66","name":"Salle 2","up":1,"rssi":-62}]}</pre></div>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Signification</th></tr></thead>
+    <tbody>
+      <tr><td><code>hid_kb</code>, <code>hid_ms</code></td><td>Clavier (+ touches média), souris USB.</td></tr>
+      <tr><td><code>serial</code></td><td>Port COM.</td></tr>
+      <tr><td><code>gpio</code>, <code>pair</code></td><td>Entrées/sorties, appairage en étoile.</td></tr>
+      <tr><td><code>ble</code>, <code>wifi</code></td><td>Bluetooth (contrôleur), point d'accès Wi-Fi.</td></tr>
+      <tr><td><code>boot5</code>, <code>bootrst</code></td><td>BOOT ×5 = désappairage&nbsp;; BOOT 20 s = reset d'usine.</td></tr>
+      <tr><td><code>role</code></td><td><code>0</code> standard, <code>1</code> maître, <code>2</code> esclave.</td></tr>
+      <tr><td><code>mac</code>, <code>name</code></td><td>Adresse Bluetooth et nom convivial (<code>""</code> = nom par défaut).</td></tr>
+      <tr><td><code>self</code>, <code>peer</code></td><td>Esclave&nbsp;: son id et l'adresse de son maître.</td></tr>
+      <tr><td><code>pkset</code>, <code>wifiset</code></td><td><code>1</code> si la passkey / la clé Wi-Fi ont été personnalisées. Les valeurs ne sont jamais transmises.</td></tr>
+      <tr><td><code>slaves</code></td><td>Maître&nbsp;: esclaves appairés, avec l'état du lien (<code>up</code>) et le signal (<code>rssi</code>, dBm).</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"cfg","a":"set","serial":true,"wifi":false}
+← {"id":0,"ev":"cfg","saved":true}             <span class="j-c">// puis redémarrage</span></pre></div>
+  <p><code>set</code> accepte les mêmes drapeaux (<code>true</code>/<code>false</code> ou <code>1</code>/<code>0</code>)&nbsp;; ceux qui manquent sont
+    conservés. Le module enregistre puis <a href="#redemarrages">redémarre</a>.</p>
+
+  <!-- ---- sec ---- -->
+  <h3 id="c-sec"><code>sec</code> <small>passkey Bluetooth et clé Wi-Fi</small></h3>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Commande</th><th>Réponse</th><th>Détail</th></tr></thead>
+    <tbody>
+      <tr><td><code>{"t":"sec","a":"get"}</code></td><td><code>{"id":0,"ev":"sec","pkset":0,"wifiset":0}</code></td><td>Indicateurs seulement.</td></tr>
+      <tr><td><code>{"t":"sec","a":"passkey","pk":"123456"}</code></td><td><code>{"id":0,"ev":"sec","ok":true}</code> + redémarrage</td>
+        <td>6 chiffres (chaîne ou entier, <code>0</code> à <code>999999</code>). Efface les appairages Bluetooth. <code>err:slaves</code> si un maître a
+        encore des esclaves, <code>err:sec</code> si la valeur est invalide.</td></tr>
+      <tr><td><code>{"t":"sec","a":"wifi","psk":"…"}</code></td><td><code>{"id":0,"ev":"sec","ok":true}</code> + redémarrage</td>
+        <td>Clé WPA2 de 8 à 63 caractères. <code>err:sec</code> sinon.</td></tr>
+    </tbody>
+  </table></div>
+
+  <!-- ---- name ---- -->
+  <h3 id="c-name"><code>name</code> <small>nom convivial</small></h3>
+  <div class="code"><pre class="json">→ {"t":"name","name":"Bureau"}
+← {"id":0,"ev":"name","name":"Bureau","reboot":true}   <span class="j-c">// puis redémarrage</span>
+→ {"t":"name","id":2,"name":"Cuisine"}                  <span class="j-c">// maître : renomme l'esclave 2</span>
+← {"id":2,"ev":"name","name":"Cuisine"}</pre></div>
+  <p>19 octets au plus (au-delà, le nom est tronqué)&nbsp;; <code>""</code> rétablit le nom par défaut <code>S3-KBD-XXYY</code>. Le nom
+    sert d'annonce Bluetooth et, pour un maître, de nom du réseau Wi-Fi&nbsp;: renommer ce module le redémarre. Renommer un
+    esclave depuis le maître ne redémarre pas l'esclave. Erreur&nbsp;: <code>id</code> (esclave inconnu).</p>
+
+  <!-- ---- pair ---- -->
+  <h3 id="c-pair"><code>pair</code> <small>appairage en étoile</small></h3>
+  <p>Toujours exécutée sur le module qui la reçoit. Dans <code>unbind</code>, <code>id</code> désigne l'esclave à libérer.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Action</th><th>Syntaxe</th><th>Réponses</th></tr></thead>
+    <tbody>
+      <tr><td><code>scan</code></td><td><code>{"t":"pair","a":"scan"}</code></td><td><code>busy</code>, puis une ligne par module trouvé
+        <code>{"id":0,"ev":"scan","mac":"…","rssi":-60,"name":"…"}</code>, puis <code>{"id":0,"ev":"scan","done":true}</code> et <code>ready</code>. Environ 4 s.</td></tr>
+      <tr><td><code>bind</code></td><td><code>{"t":"pair","a":"bind","mac":"aa:bb:cc:dd:ee:ff","name":"Salle 2"}</code></td>
+        <td><code>{"id":0,"ev":"pair","ok":true}</code> + redémarrage&nbsp;: ce module devient maître, l'esclave reçoit le plus petit id libre.
+        <code>err:pair</code> (appairage désactivé, adresse invalide ou déjà appairée, échec), <code>err:full</code> (3 esclaves).</td></tr>
+      <tr><td><code>unbind</code></td><td><code>{"t":"pair","a":"unbind","id":2}</code></td><td><code>pair</code> ok + redémarrage. <code>id</code> absent ou <code>0</code>&nbsp;: toute l'étoile.</td></tr>
+      <tr><td><code>reset</code></td><td><code>{"t":"pair","a":"reset"}</code></td><td><code>pair</code> ok + redémarrage&nbsp;: retour au rôle standard, passkey <code>000000</code>,
+        appairages effacés, nom conservé. Typiquement sur le port COM d'un esclave isolé.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">L'action <code>slave</code> est interne&nbsp;: le maître l'envoie à un module vierge pendant <code>bind</code>. Ne l'utilisez pas.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="erreurs">
+  <h2>Codes d'erreur</h2>
+  <p>Format&nbsp;: <code>{"id":n,"err":"code"}</code>.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Code</th><th>Cause</th></tr></thead>
+    <tbody>
+      <tr><td><code>json</code></td><td>La ligne n'est pas un JSON valide.</td></tr>
+      <tr><td><code>type</code></td><td>Champ <code>t</code> absent ou inconnu.</td></tr>
+      <tr><td><code>toolong</code></td><td>Ligne de plus de 600 octets.</td></tr>
+      <tr><td><code>busy</code></td><td>File de commandes pleine (16), ou file vers un esclave pleine&nbsp;: la commande est perdue.</td></tr>
+      <tr><td><code>mem</code></td><td>Mémoire insuffisante pour mettre la commande en file.</td></tr>
+      <tr><td><code>empty</code></td><td><code>char</code> sans caractère.</td></tr>
+      <tr><td><code>unmapped</code></td><td>Caractère absent de la disposition AZERTY, ou nom de touche inconnu. Dans un <code>txt</code>&nbsp;:
+        <code>unmapped:U+XXXX</code>.</td></tr>
+      <tr><td><code>nohid</code></td><td>Clavier ou souris désactivé dans les réglages.</td></tr>
+      <tr><td><code>mouse</code></td><td>Commande souris invalide.</td></tr>
+      <tr><td><code>seq</code></td><td>Séquence inconnue ou mal formée.</td></tr>
+      <tr><td><code>gpio</code></td><td>GPIO désactivé, broche inconnue, écriture sur une entrée, action inconnue, paramètre de
+        <code>loop</code> / <code>pwm</code> absent ou hors limites, ou aucun canal PWM disponible.</td></tr>
+      <tr><td><code>id</code></td><td>Maître&nbsp;: aucun esclave ne porte cet id.</td></tr>
+      <tr><td><code>nolink</code></td><td>Maître&nbsp;: l'esclave visé est injoignable. Porte l'id de l'esclave&nbsp;: <code>{"id":2,"err":"nolink"}</code>.</td></tr>
+      <tr><td><code>pair</code></td><td>Appairage impossible (fonction désactivée, rôle incompatible, adresse invalide, échec du lien).</td></tr>
+      <tr><td><code>full</code></td><td>Maître&nbsp;: déjà 3 esclaves.</td></tr>
+      <tr><td><code>slaves</code></td><td>Changement de passkey refusé&nbsp;: désappairez d'abord les esclaves.</td></tr>
+      <tr><td><code>sec</code></td><td>Passkey ou clé Wi-Fi invalide.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="evenements">
+  <h2>Événements spontanés</h2>
+  <p>Lignes émises sans commande préalable du port COM&nbsp;:</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Événement</th><th>Exemple</th><th>Quand</th></tr></thead>
+    <tbody>
+      <tr><td>Entrée GPIO</td><td><code>{"id":0,"ev":"gpio","p":"8","v":1}</code></td><td>Changement d'état d'une entrée (ou du bouton BOOT), sur ce module ou un esclave.</td></tr>
+      <tr><td>Fin d'effet GPIO</td><td><code>{"id":0,"ev":"gpio","p":"4","v":0,"fx":"loop","done":true}</code></td><td>Un clignotement (<code>nb</code>
+        atteint) ou un PWM (<code>t_pwm</code> écoulé) se termine.</td></tr>
+      <tr><td>Lien esclave</td><td><code>{"id":1,"ev":"link","up":false}</code></td><td>Maître&nbsp;: un esclave se connecte ou se déconnecte.</td></tr>
+      <tr><td>Signal</td><td><code>{"id":1,"ev":"link","rssi":-62}</code></td><td>Maître&nbsp;: toutes les 2 s par esclave lié.</td></tr>
+      <tr><td>Activité</td><td><code>{"id":0,"st":"busy"}</code></td><td>Commandes reçues par un autre canal (Bluetooth, Wi-Fi).</td></tr>
+      <tr><td>Désappairage</td><td><code>{"id":0,"ev":"pair","ok":true}</code></td><td>5 appuis sur BOOT, avant redémarrage.</td></tr>
+      <tr><td>Reset d'usine</td><td><code>{"id":0,"ev":"sys","factory":true}</code></td><td>BOOT maintenu 20 s, avant redémarrage.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="file">
+  <h2>File, cadence et STOP</h2>
+  <p>Toutes les commandes — port COM, Bluetooth et Wi-Fi confondus — entrent dans <b>une seule file</b> de 16 places et
+    sont exécutées <b>une par une, dans l'ordre d'arrivée</b>. Quand la file est pleine, la commande est refusée
+    (<code>err:busy</code>)&nbsp;: attendez un <code>pong</code> avant d'envoyer de gros lots.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Temps</th><th>Valeur</th></tr></thead>
+    <tbody>
+      <tr><td>Appui d'une touche</td><td>5 ms</td></tr>
+      <tr><td>Repos après une frappe</td><td>5 ms</td></tr>
+      <tr><td>Intervalle supplémentaire entre caractères (<code>txt</code>)</td><td>6 ms</td></tr>
+      <tr><td>Granularité des pauses <code>wait</code> / <code>every</code></td><td>20 ms</td></tr>
+    </tbody>
+  </table></div>
+  <h3 id="stop">STOP, hors file</h3>
+  <p><code>{"t":"stop"}</code> n'attend pas son tour&nbsp;: dès sa réception, avant même la file, le module interrompt la séquence
+    en cours, <b>vide la file</b>, relâche toutes les touches et répond <code>{"id":0,"st":"ready"}</code>. Sur un maître, l'arrêt est
+    aussi transmis à tous les esclaves.</p>
+  <p>La reconnaissance est <b>exacte</b>&nbsp;: seul un champ <code>t</code> valant <code>"stop"</code> (ou l'ancienne forme
+    <code>{"t":"seq","n":"stop"}</code>) déclenche l'arrêt. Le mot «&nbsp;stop&nbsp;» dans un texte est tapé normalement&nbsp;:
+    <code>{"t":"txt","v":"stop"}</code> tape bien «&nbsp;stop&nbsp;».</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="redemarrages">
+  <h2>Redémarrages</h2>
+  <p>Ces commandes enregistrent un réglage puis redémarrent le module&nbsp;:</p>
+  <ul class="list">
+    <li><code>cfg</code> <code>set</code>&nbsp;;</li>
+    <li><code>sec</code> <code>passkey</code> et <code>sec</code> <code>wifi</code>&nbsp;;</li>
+    <li><code>name</code> sur ce module (standard ou maître)&nbsp;;</li>
+    <li><code>pair</code> <code>bind</code>, <code>unbind</code>, <code>reset</code>&nbsp;;</li>
+    <li>le bouton BOOT (5 appuis ou maintien 20 s).</li>
+  </ul>
+  <p>La réponse part environ 300&nbsp;ms avant le redémarrage. L'USB est alors réinitialisé&nbsp;: <b>le port COM disparaît puis
+    réapparaît</b> quelques secondes plus tard — sous un autre numéro si les réglages USB ont changé. Fermez le port, attendez
+    sa réapparition (en le recherchant par VID/PID), puis rouvrez-le.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="etoile">
+  <h2>Piloter une étoile</h2>
+  <p>Un maître accepte au plus 3 connexions Bluetooth simultanées. Piloter le maître par le port COM n'en consomme aucune&nbsp;:
+    les 3 restent disponibles pour les esclaves. C'est la configuration conseillée pour un hôte fixe (PC, Raspberry Pi).</p>
+  <ul class="list">
+    <li>Ajoutez <code>"id":1</code> à <code>3</code> pour viser un esclave&nbsp;; sans <code>id</code>, la commande s'exécute sur le maître.</li>
+    <li><code>cfg</code>, <code>pair</code>, <code>sec</code> et <code>name</code> sont toujours traitées par le maître.</li>
+    <li>Les réponses d'un esclave sont relayées telles quelles, avec son id&nbsp;: <code>{"id":2,"ev":"gpio","p":"8","v":1}</code>.</li>
+    <li>Esclave injoignable&nbsp;: <code>{"id":2,"err":"nolink"}</code>, et un événement <code>link</code> signale son retour.</li>
+    <li>Un esclave est destiné aux entrées/sorties. Son propre port COM (s'il est activé) le pilote localement&nbsp;;
+      <code>{"t":"pair","a":"reset"}</code> l'y libère de son maître.</li>
+  </ul>
+  <div class="code"><pre class="json">→ {"t":"cfg","a":"get"}
+← {"id":0,"ev":"cfg",…,"role":1,…,"slaves":[{"id":1,…,"up":1},{"id":2,…,"up":0}]}
+→ {"t":"gpio","p":"5","a":"set","id":1}
+← {"id":1,"ev":"gpio","p":"5","v":1}
+→ {"t":"gpio","p":"5","a":"set","id":2}
+← {"id":2,"err":"nolink"}</pre></div>
+</section>
+
+<!-- ============================================================ -->
+<section id="exemples">
+  <h2>Exemples</h2>
+
+  <h3 id="ex-python">Python <small>pyserial — détection, lecture continue, barrière</small></h3>
+  <div class="code"><span class="lbl">s3kbd.py</span><pre>import json, threading, serial                     # pip install pyserial
+from serial.tools import list_ports
+
+VID, PID = 0x303A, 0x8161
+
+def trouver_port():
+    for p in list_ports.comports():
+        if p.vid == VID and p.pid == PID:
+            return p.device
+    raise SystemExit("S3-KBD introuvable : le port COM est-il activé ?")
+
+class S3KBD:
+    def __init__(self, port=None):
+        self.ser = serial.Serial(port or trouver_port(), 115200, timeout=0.1)   # DTR actif par défaut
+        self.pongs = {}
+        threading.Thread(target=self._lire, daemon=True).start()
+
+    def _lire(self):                                   # lecture continue (voir « Réponses »)
+        buf = b""
+        while True:
+            buf += self.ser.read(512)
+            while b"\n" in buf:
+                ligne, buf = buf.split(b"\n", 1)
+                ligne = ligne.strip().strip(b"\x02\x03")  # CR final, et STX/ETX en mode tramé
+                if not ligne:
+                    continue
+                msg = json.loads(ligne)
+                ev = self.pongs.pop(msg.get("n"), None) if msg.get("ev") == "pong" else None
+                if ev: ev.set()
+                else:  print("←", msg)
+
+    def envoyer(self, cmd, trame=False):
+        ligne = json.dumps(cmd, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(ligne) > 600:
+            raise ValueError("commande > 600 octets : découpez-la")
+        if trame:                                      # STX JSON ETX CR LF (voir « Tramage »)
+            self.ser.write(b"\x02" + ligne + b"\x03\r\n")
+        else:
+            self.ser.write(ligne + b"\r\n")
+
+    def attendre(self, n, delai=10):
+        """Rend la main quand toutes les commandes précédentes sont exécutées."""
+        ev = self.pongs[n] = threading.Event()
+        self.envoyer({"t": "ping", "n": n})
+        if not ev.wait(delai):
+            raise TimeoutError("pas de pong")
+
+kbd = S3KBD()
+kbd.envoyer({"t": "txt", "v": "Bonjour, café à 5 € !\n"})
+kbd.envoyer({"t": "char", "v": "s", "m": 1})        # Ctrl+S
+kbd.attendre(1)
+kbd.envoyer({"t": "gpio", "p": "4", "a": "loop", "t_set": 200, "t_clr": 800, "nb": 5})
+kbd.envoyer({"t": "stop"}, trame=True)</pre></div>
+
+  <h3 id="ex-ps">PowerShell <small>Windows, sans installation</small></h3>
+  <div class="code"><pre>$p = New-Object System.IO.Ports.SerialPort COM7, 115200
+$p.DtrEnable = $true
+$p.Encoding  = [System.Text.Encoding]::UTF8      # défaut ASCII : les accents deviendraient « ? »
+$p.NewLine   = "`r`n"
+$p.ReadTimeout = 3000
+$p.Open()
+$p.WriteLine('{"t":"txt","v":"Bonjour à tous"}')
+$p.ReadLine()                                    # {"id":0,"st":"busy"}
+$p.ReadLine()                                    # {"id":0,"st":"ready"}
+$p.Close()</pre></div>
+
+  <h3 id="ex-bash">Bash <small>Linux, Raspberry Pi</small></h3>
+  <div class="code"><pre>stty -F /dev/ttyACM0 115200 raw -echo
+cat /dev/ttyACM0 &                               # affiche les réponses
+printf '%s\n' '{"t":"txt","v":"Bonjour\n"}' > /dev/ttyACM0
+printf '%s\n' '{"t":"key","c":"MediaPlayPause"}' > /dev/ttyACM0</pre></div>
+
+  <h3 id="ex-terminal">Terminal interactif</h3>
+  <p>Tout terminal série convient&nbsp;: CR, LF et CRLF terminent tous une commande. Activez l'écho local pour voir ce que vous tapez&nbsp;:</p>
+  <ul class="list">
+    <li><b>PuTTY</b>&nbsp;: Terminal → Local echo et Local line editing sur «&nbsp;Force on&nbsp;»&nbsp;;</li>
+    <li><b>miniterm</b> (fourni avec pyserial)&nbsp;: <code>python -m serial.tools.miniterm COM7 115200 -e</code>&nbsp;;</li>
+    <li><b>Moniteur série</b> de l'IDE Arduino&nbsp;: n'importe quelle fin de ligne sauf «&nbsp;Pas de fin de ligne&nbsp;»&nbsp;;</li>
+    <li><b>Tera Term</b>&nbsp;: Configuration → Terminal → écho local.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section id="limites">
+  <h2>Limites et bonnes pratiques</h2>
+  <ul class="list">
+    <li><b>Disposition</b>&nbsp;: la machine cible doit être en AZERTY français. Les majuscules accentuées et les caractères
+      absents d'un clavier français renvoient <code>unmapped</code>&nbsp;: rien n'est tapé au hasard.</li>
+    <li><b>Aucun chiffrement</b>&nbsp;: le port COM est un canal physique de confiance. Quiconque accède à la machine hôte peut
+      piloter le module.</li>
+    <li><b>Un seul port série</b>&nbsp;: il n'existe que si le réglage <code>serial</code> est actif, et sert uniquement au protocole
+      (pas de console de diagnostic).</li>
+    <li><b>Lecture continue</b> du port, <b>barrière <code>ping</code></b> avant les gros lots, <b>relâchement</b> des touches
+      maintenues&nbsp;: les trois habitudes qui évitent les surprises.</li>
+    <li><b>Compatibilité</b>&nbsp;: le même JSON fonctionne en Bluetooth (caractéristique CMD) et en Wi-Fi (une trame WebSocket
+      par commande)&nbsp;: un script se porte d'un canal à l'autre sans modification du contenu.</li>
+  </ul>
+</section>
+
+  </article>
+</div>
+
+<footer>
+  <div class="w">
+    <span><b style="color:var(--on-ink)">S3-KBD</b> — protocole du port COM.</span>
+    <span class="sp"></span>
+    <a href="landing.html">Présentation</a>
+    <a href="notice.html">Notice technique</a>
+    <a href="landing.html#je-veux">Je veux mon S3-KBD</a>
+  </div>
+</footer>
+
+<script>
+"use strict";
+/* Coloration légère des blocs JSON (→ envoyé, ← reçu) — aucun outil externe. */
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function colorJson(txt){
+  return txt.replace(/("(?:\\.|[^"\\])*")(\s*:)?|\b(-?\d+)\b|\b(true|false|null)\b/g, (m, str, colon, num, bool) =>
+    str ? `<span class="${colon ? "j-k" : "j-s"}">${str}</span>${colon || ""}`
+        : num ? `<span class="j-n">${num}</span>` : `<span class="j-b">${bool}</span>`);
+}
+document.querySelectorAll("pre.json").forEach(pre => {
+  // Les commentaires (span.j-c) sont préservés ; le reste est coloré ligne par ligne.
+  pre.innerHTML = pre.innerHTML.split("\n").map(line => {
+    const cut = line.indexOf('<span class="j-c">');
+    const code = cut < 0 ? line : line.slice(0, cut), rest = cut < 0 ? "" : line.slice(cut);
+    const m = code.match(/^(→|←)(.*)$/);
+    const body = m ? m[2] : code;
+    const plain = body.replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+    const colored = colorJson(esc(plain));
+    return (m ? `<span class="${m[1] === "→" ? "j-out" : "j-in"}">${m[1]}</span>` : "") + colored + rest;
+  }).join("\n");
+});
+
+/* Bouton « Copier » : ne copie que les commandes (lignes →) d'un bloc JSON, tout le bloc sinon. */
+document.querySelectorAll(".code").forEach(box => {
+  const pre = box.querySelector("pre");
+  const b = document.createElement("button");
+  b.className = "copy"; b.type = "button"; b.textContent = "Copier";
+  b.addEventListener("click", async () => {
+    let t = pre.innerText;
+    if (pre.classList.contains("json")) {
+      t = t.split("\n").filter(l => l.startsWith("→")).map(l => l.slice(1).replace(/\s+\/\/.*$/, "").trim()).join("\n");
+    }
+    try { await navigator.clipboard.writeText(t); b.textContent = "Copié"; }
+    catch (_) { b.textContent = "Échec"; }
+    setTimeout(() => { b.textContent = "Copier"; }, 1400);
+  });
+  box.appendChild(b);
+});
+
+/* Sommaire : surligne la section visible. */
+const links = [...document.querySelectorAll(".toc a")];
+const byId = new Map(links.map(a => [a.getAttribute("href").slice(1), a]));
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    links.forEach(a => a.classList.remove("on"));
+    const a = byId.get(e.target.id); if (a) a.classList.add("on");
+  });
+}, { rootMargin: "-90px 0px -70% 0px" });
+document.querySelectorAll("section[id], h3[id^='c-']").forEach(el => obs.observe(el));
+</script>
+</body>
+</html>

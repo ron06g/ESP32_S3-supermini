@@ -139,6 +139,73 @@
   .conn.dim{opacity:.15; transition:opacity .25s}
   .conn.sel{stroke-width:3.4}
   .node.hitg rect{fill:#241a3a; stroke:var(--violet)}
+
+  /* ---------- Navigation documentaire ---------- */
+  .docnav{display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; margin:-24px 0 26px; font-size:13.5px}
+  .docnav a{color:var(--dim); text-decoration:none; font-weight:600}
+  .docnav a:hover{color:var(--text)}
+  .docnav b{color:var(--text); font-weight:700; padding:4px 10px; border-radius:999px; background:var(--key); border:1px solid var(--border)}
+
+  /* ---------- Sommaire ---------- */
+  .toc{display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:22px; font-size:13.5px; font-weight:600}
+  .toc a{color:var(--dim); text-decoration:none; border-bottom:1px dashed var(--border); padding-bottom:1px}
+  .toc a:hover{color:var(--text); border-color:var(--accent)}
+  h2[id]{scroll-margin-top:16px}
+
+  /* ---------- Tableau des valeurs par défaut ---------- */
+  .tbl{width:100%; border-collapse:collapse; background:var(--elev); border:1px solid var(--border);
+    border-radius:var(--radius); overflow:hidden; font-size:14px; margin-top:6px}
+  .tbl th,.tbl td{text-align:left; padding:10px 14px; border-top:1px solid rgba(255,255,255,.06); vertical-align:top}
+  .tbl thead th{border-top:0; font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--faint); background:var(--bg2)}
+  .tbl td:first-child{color:var(--text); font-weight:600; white-space:nowrap}
+  .tbl td.v{white-space:nowrap}
+  .tbl td.why{color:var(--dim)}
+  .tbl code,.sec code,.steps code,.apps code{background:var(--key); padding:1px 6px; border-radius:5px; font-size:12.5px; color:#a5d6ff}
+  .tblwrap{overflow-x:auto}
+  .grp td{background:rgba(255,255,255,.02); font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--faint)!important; font-weight:700; padding:7px 14px}
+
+  /* ---------- Sécurité ---------- */
+  .sec{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-top:6px}
+  .sec .card{padding-bottom:14px}
+  .sec p{margin:6px 0 0; font-size:14px; color:var(--dim)}
+  .sec p b{color:var(--text)}
+  .steps{margin:8px 0 0; padding-left:20px; font-size:14px; color:var(--dim)}
+  .steps li{margin:4px 0}
+  .steps b{color:var(--text)}
+
+  /* ---------- Bouton BOOT ---------- */
+  .boot{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-top:6px}
+  .gesture{display:flex; align-items:center; gap:6px; margin:10px 0 4px; flex-wrap:wrap}
+  .tap{width:26px; height:26px; border-radius:50%; background:var(--key2); border:2px solid var(--violet);
+    display:grid; place-items:center; font-size:11px; font-weight:800; color:#d2a8ff}
+  .hold{height:26px; flex:1; min-width:160px; border-radius:13px; background:var(--key); border:2px solid var(--red);
+    position:relative; overflow:hidden}
+  .hold::before{content:""; position:absolute; inset:0; width:0; background:linear-gradient(90deg,rgba(248,81,73,.15),rgba(248,81,73,.55));
+    animation:hold 5s linear infinite}
+  .hold span{position:relative; font-size:11.5px; font-weight:800; color:#ffb4ae; line-height:22px; padding-left:10px}
+  @keyframes hold{0%{width:0}80%{width:100%}100%{width:100%}}
+
+  /* ---------- LED ---------- */
+  .leds{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px; margin-top:6px}
+  .led{display:flex; align-items:center; gap:13px; background:var(--elev); border:1px solid var(--border);
+    border-radius:12px; padding:11px 14px; font-size:14px}
+  .led i{width:16px; height:16px; border-radius:50%; flex:none; background:var(--c); box-shadow:0 0 12px var(--c)}
+  .led i.br{animation:breathe 1.6s ease-in-out infinite}
+  .led i.bl{animation:breathe 1.6s steps(2,jump-none) infinite}
+  .led i.err{animation:err 1.8s steps(1) infinite}
+  .led b{display:block; color:var(--text)}
+  .led span{color:var(--dim); font-size:13px}
+  @keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
+  @keyframes err{0%,20%,40%{opacity:1}10%,30%,50%,100%{opacity:.12}}
+
+  /* ---------- Application ---------- */
+  .apps{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:12px; margin-top:6px}
+  .app{background:var(--elev); border:1px solid var(--border); border-radius:12px; padding:13px 15px}
+  .app h4{margin:0 0 4px; font-size:15px; display:flex; align-items:center; gap:8px}
+  .app p{margin:0; font-size:13.5px; color:var(--dim)}
+  .app p b{color:var(--text)}
+  .app.cfg{border-color:rgba(47,129,247,.45)}
+  @media (prefers-reduced-motion:reduce){ .hold::before,.led i{animation:none!important} .hold::before{width:100%} }
   footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border); color:var(--faint); font-size:13px}
 </style>
 </head>
@@ -147,23 +214,31 @@
 
   <!-- ===================== HERO ===================== -->
   <header class="hero">
-    <span class="badge">🔒 Liaisons BLE chiffrées (LESC) · Wi-Fi WPA2</span>
+    <nav class="docnav"><a href="landing.html">← S3-KBD</a><b>Notice technique</b><a href="protocole.html">Protocole COM</a></nav>
+    <span class="badge">🔒 BLE chiffré LESC + passkey · Wi-Fi WPA2 · antennes désactivables</span>
     <h1>S3-KBD</h1>
     <p class="sub">Un <b>pont HID clavier + souris</b> sur ESP32-S3 : il transforme une intention reçue
       par <b>BLE</b>, <b>Wi-Fi</b> ou <b>port série</b> en <b>frappes clavier / souris USB</b>.
       En <b>étoile</b>, un module <b>maître</b> injecte lui-même la frappe et <b>route par identifiant</b>
-      les commandes GPIO vers <b>jusqu'à 3 esclaves</b> appairés en BLE.</p>
+      les commandes GPIO vers <b>jusqu'à 3 esclaves</b> appairés en BLE. Chaque antenne et chaque
+      fonction se <b>désactive</b> à la demande, et le bouton <b>BOOT</b> sert de secours physique.</p>
     <div class="chips">
       <span class="chip"><span class="d" style="background:var(--green)"></span>USB HID clavier + souris</span>
       <span class="chip"><span class="d" style="background:var(--accent)"></span>BLE (Web Bluetooth)</span>
       <span class="chip"><span class="d" style="background:var(--teal)"></span>Wi-Fi (portail + WebSocket)</span>
-      <span class="chip"><span class="d" style="background:var(--amber)"></span>Port COM (série)</span>
+      <span class="chip"><span class="d" style="background:var(--amber)"></span>Port COM (option)</span>
       <span class="chip"><span class="d" style="background:var(--violet)"></span>Étoile BLE — jusqu'à 3 esclaves</span>
+      <span class="chip"><span class="d" style="background:var(--red)"></span>Reset d'usine : BOOT 20 s</span>
     </div>
+    <nav class="toc">
+      <a href="#configurations">Configurations</a><a href="#defauts">Module neuf</a>
+      <a href="#securite">Sécurité</a><a href="#boot">Bouton BOOT</a><a href="#led">LED d'état</a>
+      <a href="#app">Application</a><a href="#evolutions">Évolutions</a><a href="protocole.html">Protocole COM ↗</a>
+    </nav>
   </header>
 
   <!-- ===================== MODES ===================== -->
-  <h2>Configurations</h2>
+  <h2 id="configurations">Configurations</h2>
   <div class="lead">Choisissez un mode de fonctionnement</div>
   <div class="seg" id="seg">
     <button data-mode="auto" class="on"><span class="ic">📡</span> Mode autonome</button>
@@ -357,8 +432,153 @@
   <div class="lead" id="cardtitle">Mode autonome</div>
   <div class="grid" id="cards"></div>
 
+  <!-- ===================== MODULE NEUF ===================== -->
+  <h2 id="defauts">Module neuf</h2>
+  <div class="lead">Réglages d'usine — et ce que chacun implique</div>
+  <div class="tblwrap">
+  <table class="tbl">
+    <thead><tr><th>Réglage</th><th>Valeur d'usine</th><th>Conséquence</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="3">Fonctions (onglet Réglages ⚙️ → Fonctions)</td></tr>
+      <tr><td>HID clavier</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Clavier + touches média USB ; onglets AZERTY, Num, Fn/Média.</td></tr>
+      <tr><td>HID souris</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Souris USB ; onglet Souris.</td></tr>
+      <tr><td>Port COM</td><td class="v"><span class="state no">✗ désactivé</span></td><td class="why">Aucun port série exposé : un module neuf n'apparaît que comme clavier/souris.</td></tr>
+      <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO (sorties 4-7, entrées BOOT et 8-11).</td></tr>
+      <tr><td>Appairage</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Scan et appairage BLE ↔ BLE en étoile.</td></tr>
+      <tr><td>BLE (contrôleur)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Le module s'annonce : un téléphone / PC peut s'y connecter.</td></tr>
+      <tr><td>Wi-Fi (SoftAP)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Point d'accès + portail captif + app embarquée.</td></tr>
+      <tr><td>BOOT ×5</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">5 appuis rapides = désappairage.</td></tr>
+      <tr><td>BOOT 20 s</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Maintien 20 s = reset d'usine.</td></tr>
+      <tr class="grp"><td colspan="3">Identité & accès (Réglages → Module / Sécurité)</td></tr>
+      <tr><td>Rôle</td><td class="v">standard</td><td class="why">Module autonome, ni maître ni esclave.</td></tr>
+      <tr><td>Nom BLE</td><td class="v"><code>S3-KBD-XXYY</code></td><td class="why">XXYY = 2 derniers octets de la MAC. Remplacé par le nom convivial (20 car. max) dès qu'il est défini.</td></tr>
+      <tr><td>Passkey BLE</td><td class="v"><code>000000</code></td><td class="why">Saisie sur le téléphone à la première connexion (6 chiffres).</td></tr>
+      <tr><td>Réseau Wi-Fi</td><td class="v"><code>S3-KBD</code></td><td class="why">Le SSID suit le nom convivial. Un seul client Wi-Fi à la fois.</td></tr>
+      <tr><td>Clé Wi-Fi</td><td class="v"><code>12345678</code></td><td class="why">WPA2, 8 à 63 caractères. À personnaliser dès la mise en service.</td></tr>
+      <tr><td>Adresse</td><td class="v"><code>192.168.4.1</code></td><td class="why">App servie en HTTP ; commandes sur le WebSocket <code>ws://192.168.4.1:81/</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="cardnote">Renommer un module <b>le redémarre</b> (le nom est aussi son annonce BLE et, pour un maître, son SSID).
+    Enregistrer les fonctions redémarre aussi le module : l'USB est ré-énuméré, il faut se reconnecter.</p>
+
+  <!-- ===================== SÉCURITÉ ===================== -->
+  <h2 id="securite">Sécurité</h2>
+  <div class="lead">Chiffré par défaut, réductible à la demande</div>
+  <div class="sec">
+    <div class="card" style="--role:var(--accent)">
+      <h3>🔵 Bluetooth — LESC + passkey</h3>
+      <p>Liaisons chiffrées en <b>LE Secure Connections</b> avec authentification <b>MITM</b>. Passkey statique à
+        6 chiffres (usine <code>000000</code>), saisie par le téléphone à la première connexion.</p>
+      <p>La caractéristique de commande exige un <b>lien authentifié</b> : un appareil non appairé ne peut rien écrire.
+        Entre maître et esclaves, le ré-appairage MITM est <b>automatique</b> (passkey partagée transmise au provisioning).</p>
+    </div>
+    <div class="card" style="--role:var(--teal)">
+      <h3>📶 Wi-Fi — WPA2</h3>
+      <p>Point d'accès protégé <b>WPA2</b> (usine <code>12345678</code>), <b>sans accès Internet</b> : le module
+        ne sert que sa propre application.</p>
+      <p>Le WebSocket n'est protégé que par la WPA2 : <b>changez la clé d'usine</b>, ou coupez le Wi-Fi s'il ne sert pas.</p>
+    </div>
+    <div class="card" style="--role:var(--amber)">
+      <h3>⏻ Antennes et fonctions désactivables</h3>
+      <p>Chaque fonction coupée réduit la consommation <b>et</b> la surface d'attaque.</p>
+      <p><b>BLE off</b> : plus d'annonce ni de connexion téléphone / OS ; les liens maître ↔ esclaves restent possibles.
+        <b>BLE off + appairage off</b> (module autonome) : radio BLE jamais initialisée.
+        <b>Wi-Fi off</b> : pas de point d'accès. <b>HID</b> : le clavier / la souris USB ne sont créés que s'ils sont cochés.</p>
+    </div>
+    <div class="card" style="--role:var(--green)">
+      <h3>🛟 Garde-fou « perte de contrôle »</h3>
+      <p>Au moins un canal de commande — <b>Wi-Fi, COM ou BLE</b> — doit rester actif : l'application refuse
+        d'enregistrer une configuration qui rendrait le module injoignable.</p>
+      <p>En dernier recours : <b>reset d'usine</b> par le bouton BOOT (voir ci-dessous).</p>
+    </div>
+    <div class="card" style="--role:var(--violet)">
+      <h3>🔑 Changer la passkey</h3>
+      <ol class="steps">
+        <li><b>Désappairer tous les esclaves</b> (requis avant tout changement).</li>
+        <li>Changer la passkey : le module <b>efface ses bonds</b> et redémarre.</li>
+        <li>« Oublier » le module dans les réglages Bluetooth du téléphone.</li>
+        <li>Se reconnecter, puis <b>refaire l'appairage</b> dans l'ordre.</li>
+      </ol>
+    </div>
+    <div class="card" style="--role:var(--red)">
+      <h3>⚠️ Usage</h3>
+      <p>Le module envoie de <b>vraies frappes</b> : comme tout clavier, ne le brancher que sur des machines de confiance.</p>
+      <p>Hors périmètre actuel : authentification du site web, chiffrement du WebSocket au-delà de la WPA2,
+        port COM (canal physique de confiance).</p>
+    </div>
+  </div>
+
+  <!-- ===================== BOUTON BOOT ===================== -->
+  <h2 id="boot">Bouton BOOT</h2>
+  <div class="lead">Secours physique, sans téléphone ni câble de données</div>
+  <div class="boot">
+    <div class="card" style="--role:var(--violet)">
+      <h3>5 appuis rapides — désappairage</h3>
+      <div class="gesture" aria-hidden="true"><span class="tap">1</span><span class="tap">2</span><span class="tap">3</span><span class="tap">4</span><span class="tap">5</span><span class="cardnote" style="margin:0 0 0 6px">en moins de 3 s</span></div>
+      <p class="cardnote" style="font-size:13.5px; color:var(--dim)"><b style="color:var(--text)">Maître</b> : libère toute l'étoile.
+        <b style="color:var(--text)">Esclave</b> : revient au rôle standard. <b style="color:var(--text)">Module standard</b> : rien à défaire
+        (impulsion ambre). Chaque appui donne une impulsion violette. Désactivable : flag <code>boot5</code>.</p>
+    </div>
+    <div class="card" style="--role:var(--red)">
+      <h3>Maintien 20 s — reset d'usine</h3>
+      <div class="gesture" aria-hidden="true"><div class="hold"><span>maintenir… 20 s</span></div></div>
+      <p class="cardnote" style="font-size:13.5px; color:var(--dim)">Efface passkey, noms, paramètres, table d'appairage et bonds ;
+        <b style="color:var(--text)">le logiciel est conservé</b>. La LED clignote 4 fois en rouge, puis le module redémarre
+        avec les <a href="#defauts">réglages d'usine</a>. Désactivable : flag <code>bootrst</code>.
+        Désactiver les deux boutons supprime tout secours physique.</p>
+    </div>
+  </div>
+
+  <!-- ===================== LED ===================== -->
+  <h2 id="led">LED d'état</h2>
+  <div class="lead">Lire le module d'un coup d'œil</div>
+  <div class="leds">
+    <div class="led"><i class="br" style="--c:#f0f6fc"></i><div><b>Blanc, respire</b><span>Démarrage</span></div></div>
+    <div class="led"><i class="bl" style="--c:#2f81f7"></i><div><b>Bleu, clignotement lent</b><span>En attente d'un contrôleur</span></div></div>
+    <div class="led"><i style="--c:#2f81f7"></i><div><b>Bleu fixe</b><span>Contrôleur connecté (maître : dès qu'un lien est actif)</span></div></div>
+    <div class="led"><i class="br" style="--c:#a371f7"></i><div><b>Violet, respire</b><span>Séquence ou texte en cours de frappe</span></div></div>
+    <div class="led"><i class="err" style="--c:#f85149"></i><div><b>Rouge, N clignotements</b><span>Erreur n° N (4 = reset d'usine en cours)</span></div></div>
+    <div class="led"><i class="br" style="--c:#d29922"></i><div><b>Ambre, respire</b><span>Esclave en attente de son maître</span></div></div>
+    <div class="led"><i style="--c:#3fb950"></i><div><b>Vert doux fixe</b><span>Esclave lié — l'intensité suit le signal (−90 à −40 dBm)</span></div></div>
+  </div>
+
+  <!-- ===================== APPLICATION ===================== -->
+  <h2 id="app">Application</h2>
+  <div class="lead">Les onglets et ce qu'ils pilotent</div>
+  <div class="apps">
+    <div class="app"><h4>🖱️ Souris</h4><p>Pavé tactile plein écran (glisser = déplacer, appui bref = clic), clics gauche / milieu / droit,
+      molette. Le bouton <b>⌨️</b> ouvre la <b>saisie au clavier du téléphone</b> : le texte est envoyé d'un bloc.</p></div>
+    <div class="app"><h4>⌨️ AZERTY</h4><p>Clavier complet, accents et touches mortes compris. <b>Modificateurs collants</b> :
+      1 clic = armé pour la touche suivante, 2 = verrouillé, 3 = relâché.</p></div>
+    <div class="app"><h4>🔢 Num</h4><p>Pavé numérique, opérateurs, parenthèses, <b>€</b>, Entrée et touches d'édition.</p></div>
+    <div class="app"><h4>🎛️ Fn / Média</h4><p>Volume, lecture, accueil / retour, F1-F12, navigation, <b>raccourcis Windows</b>
+      prêts à l'emploi, et <b>création de séquence</b> (frappes, attentes, répétitions — tempo tenu par le module).</p></div>
+    <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran : sorties en bascule,
+      entrées en voyants (pull-up, actif bas). « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
+      sur une sortie&nbsp;: popup <b>clignotement</b> (durées allumé / éteint, préréglages) ou <b>PWM</b> (rapport cyclique, fréquence),
+      exécuté par la carte en continu jusqu'au prochain clic ou «&nbsp;Arrêter&nbsp;». Une sortie en effet a une bordure qui pulse.</p></div>
+    <div class="app cfg"><h4>⚙️ Réglages</h4><p><b>Module</b> : MAC, rôle, renommage. <b>Sécurité</b> : passkey et clé Wi-Fi
+      (état « usine » / « personnalisée », valeurs jamais relues). <b>Fonctions</b> : interrupteurs groupés.
+      <b>Appairage</b> : esclaves, scan, test de liaison (20 pings, <b>graphe RTT</b> par module, pertes).</p></div>
+  </div>
+  <p class="cardnote">Les onglets dont la fonction est désactivée sont masqués. Web Bluetooth : Chrome ou Edge (Android, ordinateur) ;
+    iPhone / iPad : passer par le Wi-Fi du module. Pilotage par script : voir le <a href="protocole.html">protocole du port COM</a>.</p>
+
+  <!-- ===================== ÉVOLUTIONS ===================== -->
+  <h2 id="evolutions">Évolutions</h2>
+  <div class="lead">Un projet qui évolue selon les besoins</div>
+  <div class="callout" style="margin-top:6px">
+    <div class="co"><div class="t">Principe</div><div class="v">Chaque évolution part des <b>usages réels</b> : les besoins exprimés
+      à la pré-inscription orientent l'ordre de la feuille de route.</div></div>
+    <div class="co"><div class="t">Feuille de route</div><div class="v"><b>Applications hors ligne</b> Android, iPhone et Windows :
+      mêmes commandes que l'application web, sans navigateur ni connexion Internet.</div></div>
+    <div class="co"><div class="t">Compatibilité</div><div class="v">Le <b>protocole JSON</b> reste le contrat commun : les scripts
+      écrits pour le port COM, le Bluetooth ou le Wi-Fi restent valables.</div></div>
+  </div>
+
   <footer>
-    S3-KBD — notice technique. Liaisons BLE chiffrées (LESC) + authentification MITM ; Wi-Fi WPA2.
+    S3-KBD — notice technique. Liaisons BLE chiffrées (LESC) + authentification MITM ; Wi-Fi WPA2 ; antennes désactivables.
     Le périphérique agit comme un clavier/souris USB : ne le brancher que sur des machines de confiance.
   </footer>
 </div>
@@ -536,13 +756,14 @@ $("#play").addEventListener("click",start);
 /* ---------- Cartes de capacités ---------- */
 const F={yes:'<span class="state yes">✓ actif</span>', no:'<span class="state no">✗ non</span>',
   opt:'<span class="state opt">◐ option</span>', out:'<span class="state out">→ sortie</span>',
+  sw:'<span class="state yes">✓ désactivable</span>',
   io:'<span class="state out">⇄ E/S</span>', route:'<span class="state opt">↯ routé</span>'};
 const DATA={
   auto:{title:"Mode autonome", cards:[
     {h:"📡 Module autonome", role:"un seul module — pilotage direct", color:"var(--accent)",
-     fn:[["Clavier HID",F.yes],["Souris HID",F.yes],["Séquences / macros",F.yes],["Touches média",F.yes],["GPIO",F.io],["Port COM",F.opt]],
-     co:[["USB HID → cible",F.out],["BLE (Web Bluetooth)",F.yes],["Wi-Fi (SoftAP + WebSocket)",F.yes],["Port COM (série)",F.opt]],
-     note:"Le contrôleur choisit son transport (BLE, Wi-Fi ou COM). Le HID part toujours vers la machine cible ; le protocole reste bidirectionnel."}
+     fn:[["Clavier HID",F.sw],["Souris HID",F.sw],["Séquences / macros",F.yes],["Touches média",F.yes],["GPIO",F.io],["Port COM",F.opt]],
+     co:[["USB HID → cible",F.out],["BLE (Web Bluetooth)",F.sw],["Wi-Fi (SoftAP + WebSocket)",F.sw],["Port COM (série)",F.opt]],
+     note:"Le contrôleur choisit son transport (BLE, Wi-Fi ou COM). Le HID part toujours vers la machine cible ; le protocole reste bidirectionnel. Au moins un canal de commande reste toujours actif (garde-fou)."}
   ]},
   con:{title:"Mode étoile — maître + 1 à 3 esclaves", cards:[
     {h:"📡 Maître", role:"id 0 · clavier/souris local + routeur par id", color:"var(--accent)",
@@ -552,7 +773,7 @@ const DATA={
     {h:"📡 Esclave", role:"id 1-3 · GPIO uniquement (jusqu'à 3)", color:"var(--violet)",
      fn:[["GPIO",F.io],["Port COM (+ RESET)",F.opt],["Clavier / Souris HID",F.no],["Wi-Fi",F.no]],
      co:[["BLE (maître uniquement)",F.yes],["Wi-Fi",F.no],["USB HID",F.no],["Se signale avec selfId",F.yes]],
-     note:"Ne fait que du GPIO (+ COM). BLE filtré sur la MAC du maître. Le maître attribue le plus petit id libre (1..3). Libération : unbind par id, RESET sur COM, ou 5 appuis BOOT (toute l'étoile)."}
+     note:"Ne fait que du GPIO (+ COM). BLE filtré sur la MAC du maître et chiffré (MITM automatique). Le maître attribue le plus petit id libre (1..3). Libération : unbind par id depuis le maître, reset sur le COM de l'esclave, ou 5 appuis BOOT (sur le maître : toute l'étoile ; sur l'esclave : lui seul)."}
   ]}
 };
 function renderCards(){

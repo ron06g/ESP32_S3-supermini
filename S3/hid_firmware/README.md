@@ -16,7 +16,7 @@ média) et un serveur BLE recevant les commandes du site web.
 | `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
 | `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair, **passkey LESC**, **clé WPA2**, **nom convivial** du module + des esclaves |
 | `com_port.h` | **Port COM** : réutilise l'unique CDC (interface 0) en mode protocole (1 ligne JSON = 1 commande, 1 STATUS = 1 ligne). Pas de 2ᵉ CDC (budget d'endpoints S3) |
-| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11), scrutation anti-rebond |
+| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11), scrutation anti-rebond, **effets autonomes** des sorties (tâche `gpiofx` : clignotement `loop`, PWM matériel `pwm`) |
 | `ble_link.h` | **Appairage BLE ↔ BLE (chiffré LESC)** : scan, bind (bootstrap Just Works + provisioning sur PROV), unbind, tâche `link` (client GATT ; `secureConnection()` avant tout `writeValue`) |
 | `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
 | `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
@@ -136,7 +136,10 @@ maître/local par défaut) :
 | `{"t":"sec","a":"wifi","psk":"…"}` | changer la clé WPA2 du SoftAP (≥ 8 car.) | `sec` ok + reboot, sinon `err:sec` |
 | `{"t":"sec","a":"get"}` | indicateurs sécurité (jamais les valeurs) | `{"id":0,"ev":"sec","pkset":0,"wifiset":0}` |
 | `{"t":"name","name":"…"}` / `…,"id":n}` | renommer ce module (→ **reboot**, le nom est l'annonce BLE) / (maître) l'esclave `n` (routé, **pas de reboot** de l'esclave) | `{"id":n,"ev":"name","name":"…"[,"reboot":true]}` |
-| `{"t":"gpio","p":"4","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout) | `{"id":1,"ev":"gpio","p":"4","v":1}` (aussi spontané sur entrée) |
+| `{"t":"gpio","p":"4","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout ; `clr` sans `p` = tout éteindre) | `{"id":1,"ev":"gpio","p":"4","v":1}` (aussi spontané sur entrée) |
+| `{"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}` | clignotement **autonome** : `nb` cycles (0/absent = infini), phases 10 ms…24 h | départ `{…,"v":1,"fx":"loop"}`, fin `{…,"v":0,"fx":"loop","done":true}` |
+| `{"t":"gpio","p":"5","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}` | PWM **matériel** (LEDC) : `duty` 0–100 %, `t_pwm` ms (0/absent = infini), `hz` 10–40000 (défaut 1000) | départ `{…,"fx":"pwm","duty":40}`, fin `{…,"done":true}` |
+| `{"t":"stop"}` | arrêt d'urgence **hors file** (séquence, file, touches) ; alias `{"t":"seq","n":"stop"}` | `{"id":0,"st":"ready"}` |
 | — | événements du lien (maître, par esclave) | `{"id":1,"ev":"link","up":true}`, `{"…,"up":false}`, `{"…,"rssi":-62}` (2 s) |
 
 Erreurs : `{"id":n,"err":"nolink"}` (esclave `n` injoignable), `err:id` (id inconnu),
@@ -161,11 +164,22 @@ Frames STATUS ≤ **512 o**.
 
 **Port COM** : l'ESP32-S3 (USB-OTG FS, 6 endpoints) ne peut PAS exposer clavier + souris +
 **deux** CDC — le composite est refusé par l'hôte (Windows code 10). Le port COM **réutilise
-donc l'unique CDC** : quand `serial` est actif, ce CDC parle le protocole (1 ligne = 1 commande,
-STATUS en lignes) et les logs de debug sont tus pour garder le flux propre ; quand `serial` est
-inactif, le même CDC est la **console** de debug. Vitesse nominale (USB CDC l'ignore : 9600 8N1
+donc l'unique CDC** : il n'existe que si `serial` est actif et parle alors le protocole
+(1 commande par ligne ou par trame STX…ETX, STATUS terminés CR LF) ; sinon aucun CDC n'est
+exposé (console de debug supprimée). Vitesse nominale (USB CDC l'ignore : 9600 8N1
 côté hôte convient). Le **numéro de série USB** dérive des flags (`S3KBD-KMS`, `x` = désactivé)
 pour que Windows ré-énumère proprement chaque combinaison.
+
+**Effets GPIO autonomes** : toute écriture sur une sortie (`set`/`clr`/`tgl`/`loop`/`pwm`)
+interrompt l'effet en cours sur cette sortie ; `read` n'interrompt rien. Une seule tâche
+`gpiofx` gère toutes les sorties : elle dort jusqu'à la prochaine échéance (2 réveils par
+cycle de clignotement, aucun pendant un PWM, matériel). Les effets tournent sur la carte
+visée (`id`) : seuls le départ et la fin produisent un STATUS.
+
+**Port COM — tramage** : une commande se termine par CR, LF ou CRLF, **ou** s'encadre
+`STX` (0x02) … `ETX` (0x03) (CR LF facultatifs après ETX ; STX jette tout reste partiel,
+JSON multi-ligne accepté entre STX et ETX). Les réponses se terminent par CR LF et
+reprennent le format de la dernière commande reçue. Détail : `WEB/Landing/protocole.html`.
 
 **GPIO** : `gpio_panel.h`, table unique `GPIO_TABLE[]` — `BOOT` (GPIO0, bouton intégré),
 sorties `4 5 6 7`, entrées `8 9 10 11` (pull-up, **1 = actif = niveau bas**). Le **maître**
@@ -183,7 +197,7 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
    - `{"t":"key","c":"Enter","a":"tap"}` → valide une ligne.
    - `{"t":"char","v":"c","m":1}` → **Ctrl+C**.
    - Séquence tempo (socle §5.3) : `{"t":"seq","s":[{"tap":"1"},{"wait":1000},{"tap":"2"},{"wait":1000},{"rep":3,"every":4000,"tap":"3"}]}`.
-   - Arrêt : `{"t":"seq","n":"stop"}`.
+   - Arrêt : `{"t":"stop"}` (hors file ; l'ancienne forme `{"t":"seq","n":"stop"}` reste acceptée).
 3. S'abonner à **STATUS** (`…-0002`) : les frames sont du **JSON**, ex.
    `{"id":0,"st":"ready"}`, `{"id":0,"st":"busy"}`, `{"id":0,"err":"unmapped"}`.
 4. Nouveautés : `{"t":"ping","n":1}` → `{"id":0,"ev":"pong","n":1}` ; `{"t":"cfg","a":"get"}`

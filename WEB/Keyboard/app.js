@@ -488,7 +488,7 @@ function stepsToJson() {
     : { rep:Number(st.rep), every:Number(st.every), tap:st.tap });
 }
 function runSeq() { if (!steps.length) { toast('Séquence vide'); return; } send({ t:'seq', s:stepsToJson() }, true); }
-function stopSeq() { send({ t:'seq', n:'stop' }, true); }
+function stopSeq() { send({ t:'stop' }, true); }   // arrêt hors-file (reconnu exactement par le firmware)
 
 // ===========================================================================
 //  Texte / macro rapide — mémorisation depuis la popup clavier (onglet Souris).
@@ -932,7 +932,10 @@ function buildGpioModules() {
     const outs = GPIO_OUT.map((p) => {
       const el = document.createElement('div'); el.className = 'key nav gpio';
       el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
-      el.addEventListener('click', () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, mod.id); });
+      el.title = 'Clic : basculer · appui long : clignotement ou PWM';
+      bindLongPress(el,
+        () => openGpioFx(mod, p, el),                                        // appui long
+        () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, mod.id); }); // clic : bascule
       return el;
     });
     const ins = GPIO_IN.map((p) => {
@@ -947,8 +950,123 @@ function buildGpioModules() {
 }
 function onGpio(m) {
   const v = (m.v === 1 || m.v === true);
-  document.querySelectorAll(`[data-gid="${m.id}"][data-gpio="${m.p}"]`).forEach((el) => el.classList.toggle('on', v));
+  const fx = !!m.fx && !m.done;           // effet autonome en cours (clignotement / PWM) sur la carte
+  document.querySelectorAll(`[data-gid="${m.id}"][data-gpio="${m.p}"]`).forEach((el) => {
+    el.classList.toggle('on', v);
+    el.classList.toggle('fx', fx);
+  });
 }
+// ---------------------------------------------------------------------------
+//  Appui long : clic court = action normale, maintien = action secondaire.
+//  Clic droit (ordinateur) = maintien. Un léger glissement (défilement de la
+//  page) annule le maintien. Classe .pressing = jauge de progression (CSS).
+// ---------------------------------------------------------------------------
+const LONG_PRESS_MS = 450;
+function bindLongPress(el, onLong, onShort) {
+  let timer = null, fired = false, sx = 0, sy = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; el.classList.remove('pressing'); };
+  const fire = () => {
+    cancel(); fired = true;
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+    onLong();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button) return;                          // bouton principal / doigt seulement
+    fired = false; sx = e.clientX; sy = e.clientY;
+    cancel(); el.classList.add('pressing');
+    timer = setTimeout(fire, LONG_PRESS_MS);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel();
+  });
+  el.addEventListener('pointerup', cancel);
+  el.addEventListener('pointerleave', cancel);
+  el.addEventListener('pointercancel', cancel);
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!fired) fire(); });
+  el.addEventListener('click', () => { if (fired) { fired = false; return; } onShort(); });
+}
+
+// ---------------------------------------------------------------------------
+//  Popup « effet » d'une sortie (appui long) : clignotement (loop) ou PWM,
+//  toujours en durée infinie — l'effet tourne sur la carte jusqu'à une nouvelle
+//  commande sur cette sortie (clic = bascule, ou « Arrêter »).
+// ---------------------------------------------------------------------------
+const FX_PRESETS = { lent:[1000, 1000], normal:[500, 500], rapide:[100, 100], eclat:[50, 950] };
+const fxLast = {};                                  // derniers réglages par carte:sortie
+let fxTarget = null;                                // { mod, p }
+
+function fxParams(key) {
+  return fxLast[key] || (fxLast[key] = { mode:'loop', tSet:500, tClr:500, duty:50, hz:1000 });
+}
+function openGpioFx(mod, p, el) {
+  fxTarget = { mod, p };
+  const s = fxParams(mod.id + ':' + p);
+  $('#fxTitle').textContent = `Sortie ${p} · ${mod.name}`;
+  $('#fxRunning').classList.toggle('hidden', !(el && el.classList.contains('fx')));
+  $('#fxSet').value = s.tSet; $('#fxClr').value = s.tClr; $('#fxDuty').value = s.duty;
+  document.querySelectorAll('#fxHz .btn').forEach((b) => b.classList.toggle('active', +b.dataset.hz === s.hz));
+  setFxMode(s.mode);
+  renderFx();
+  $('#gpioFx').classList.remove('hidden');
+}
+function closeGpioFx() { $('#gpioFx').classList.add('hidden'); fxTarget = null; }
+function setFxMode(mode) {
+  document.querySelectorAll('#fxModes .btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('#gpioFx .fxpane').forEach((pn) => pn.classList.toggle('hidden', pn.dataset.pane !== mode));
+  if (fxTarget) fxParams(fxTarget.mod.id + ':' + fxTarget.p).mode = mode;
+}
+// Valeurs affichées + mémorisation des réglages de la sortie.
+function renderFx() {
+  if (!fxTarget) return;
+  const s = fxParams(fxTarget.mod.id + ':' + fxTarget.p);
+  s.tSet = +$('#fxSet').value; s.tClr = +$('#fxClr').value; s.duty = +$('#fxDuty').value;
+  $('#fxSetVal').textContent = s.tSet + ' ms';
+  $('#fxClrVal').textContent = s.tClr + ' ms';
+  $('#fxDutyVal').textContent = s.duty + ' %';
+  const cycle = s.tSet + s.tClr, hz = 1000 / cycle;
+  const num = (x) => x.toLocaleString('fr-FR', { maximumFractionDigits:1 });
+  $('#fxLoopInfo').textContent = `Cycle ${cycle} ms · ${hz >= 1 ? num(hz) + ' Hz' : 'un éclat toutes les ' + num(cycle / 1000) + ' s'}` +
+    ` · allumé ${Math.round(100 * s.tSet / cycle)} % du temps`;
+  $('#fxPwmInfo').textContent = s.duty === 0 ? 'Sortie maintenue à 0' : s.duty === 100 ? 'Sortie maintenue à 1'
+    : `Niveau moyen ${s.duty} % · ${s.hz >= 1000 ? s.hz / 1000 + ' kHz' : s.hz + ' Hz'}`;
+}
+function runGpioFx() {
+  if (!fxTarget) return;
+  const { mod, p } = fxTarget, s = fxParams(mod.id + ':' + p);
+  // Durée infinie : ni nb (loop) ni t_pwm (pwm).
+  const cmd = s.mode === 'pwm' ? { t:'gpio', p, a:'pwm', duty:s.duty, hz:s.hz }
+                               : { t:'gpio', p, a:'loop', t_set:s.tSet, t_clr:s.tClr };
+  send(cmd, true, mod.id);
+  closeGpioFx();
+  toast(s.mode === 'pwm' ? `PWM ${s.duty} % lancé sur la sortie ${p}` : `Clignotement lancé sur la sortie ${p}`);
+}
+function stopGpioFx() {
+  if (!fxTarget) return;
+  const { mod, p } = fxTarget;
+  send({ t:'gpio', p, a:'clr' }, true, mod.id);    // toute écriture interrompt l'effet
+  closeGpioFx();
+  toast(`Sortie ${p} arrêtée`);
+}
+function initGpioFx() {
+  $('#btnFxClose').addEventListener('click', closeGpioFx);
+  $('#gpioFx').addEventListener('click', (e) => { if (e.target.id === 'gpioFx') closeGpioFx(); });
+  $('#fxModes').addEventListener('click', (e) => { const b = e.target.closest('.btn'); if (b) { setFxMode(b.dataset.mode); renderFx(); } });
+  $('#fxPresets').addEventListener('click', (e) => {
+    const b = e.target.closest('.btn'); if (!b) return;
+    const [on, off] = FX_PRESETS[b.dataset.preset]; $('#fxSet').value = on; $('#fxClr').value = off; renderFx();
+  });
+  $('#fxHz').addEventListener('click', (e) => {
+    const b = e.target.closest('.btn'); if (!b || !fxTarget) return;
+    fxParams(fxTarget.mod.id + ':' + fxTarget.p).hz = +b.dataset.hz;
+    document.querySelectorAll('#fxHz .btn').forEach((x) => x.classList.toggle('active', x === b));
+    renderFx();
+  });
+  ['#fxSet', '#fxClr', '#fxDuty'].forEach((id) => $(id).addEventListener('input', renderFx));
+  $('#btnFxRun').addEventListener('click', runGpioFx);
+  $('#btnFxStop').addEventListener('click', stopGpioFx);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && fxTarget) closeGpioFx(); });
+}
+
 // Relit toutes les cartes (maître + esclaves).
 function readGpio() {
   if (!activeTransport || !activeTransport.connected) return;
@@ -1148,13 +1266,14 @@ function init() {
     refreshMods();
     initMouse();
     initTextPass();
+    initGpioFx();
   } catch (e) { logLine('err', 'init UI (partiel) : ' + e.message); }
 
   try { wireUI(); } catch (e) { logLine('err', 'wireUI : ' + e.message); }
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v17 (graphe RTT test de liaison) chargé ===');
+  logLine('in', '=== app.js v19 (appui long GPIO : clignotement / PWM) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

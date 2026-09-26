@@ -71,7 +71,15 @@ serve.bat            # ou : python serve.py [port]
 ```
 
 `serve.py` génère un certificat auto-signé dans `WEB/ssl/` au 1ᵉʳ lancement (SAN =
-localhost + IP locales), sert `WEB/` en HTTPS et interdit l'accès à `/ssl`.
+localhost + IP locales), sert `WEB/` en HTTPS et interdit l'accès à `/ssl`. Il reçoit
+aussi les pré-inscriptions de la landing (`POST /api/inscription` → `inscriptions.py` →
+SQLite `data/inscriptions.db`, **non versionné** : e-mails = données personnelles).
+`python serve.py 8010 --http` = HTTP sur localhost pour tester la landing.
+
+**`WEB/Landing/`** (landing, `notice.html`, `protocole.html`) est le site public : **non
+embarqué** dans le firmware (`gen_web_assets.py` ne lit que `WEB/Keyboard/`, servi par le
+portail captif). `protocole.html` décrit le protocole COM d'après le firmware : le mettre
+à jour avec lui.
 Navigateurs : **Chrome/Edge** (Android ou desktop). **Exclus** : iOS/iPadOS (tous
 navigateurs), Firefox, Safari. Brave a Web Bluetooth désactivé par défaut.
 
@@ -100,7 +108,8 @@ USB) est partagé — les deux transports enfilent dans `g_cmdQueue`.
 
 Commandes JSON UTF-8 sur CMD, champ `t` : `char` (un caractère, mode direct),
 `txt` (chaîne / macro), `key` (touche nommée / média, action `tap`/`down`/`up`),
-`seq` (séquence prédéfinie `n`, personnalisée `s[]`, ou `stop`), `mouse`
+`seq` (séquence prédéfinie `n` ou personnalisée `s[]`), `stop` (arrêt d'urgence
+hors-file ; alias historique `{"t":"seq","n":"stop"}`), `mouse`
 (déplacement `dx/dy`, molette `w`, bouton `b`+`a`), `ping` (`n` → `pong`),
 `cfg` (`a`=`get`/`set` : flags persistants `hid_kb`/`hid_ms`/`serial`/`gpio`/`pair`/
 `ble`/`wifi`/`boot5`/`bootrst`, réponse `ev:cfg`, `set` redémarre ; **au moins un canal
@@ -111,7 +120,9 @@ la `pk` = passkey du maître), `sec` (`a`=`passkey`/`wifi`/`get` : passkey LESC 
 clé WPA2, **toujours local**, `set` redémarre), `name` (`name` = nom convivial ;
 un module qui se renomme **redémarre** — le nom est aussi l'annonce BLE fixée au
 boot ; routé par `id` vers un esclave, celui-ci **ne redémarre pas**, garde le lien), `gpio`
-(`p` label, `a`=`set`/`clr`/`tgl`/`read`). Masque
+(`p` label, `a`=`set`/`clr`/`tgl`/`read`, **effets autonomes** `loop` (`t_set`/`t_clr` ms,
+`nb` cycles, 0 = infini) et `pwm` (`duty` %, `t_pwm` ms, `hz`) ; `{"t":"gpio","a":"clr"}`
+sans `p` = tout éteindre ; toute écriture sur une sortie interrompt son effet). Masque
 modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
 
 **Sécurité (phase LESC).** Les liaisons BLE sont chiffrées en **LE Secure
@@ -148,8 +159,9 @@ en JSON `{"id":g_myId,…}` et laisse passer une frame déjà JSON (`statusRaw`)
 **Troisième transport (port COM) et rôles maître/esclave.** L'ESP32-S3 (USB-OTG
 FS, 6 endpoints) ne peut pas héberger clavier + souris + **deux** CDC (composite
 refusé, Windows code 10). Le port COM utilise donc l'**unique CDC** (`com_port.h`,
-interface 0), **créé seulement si le flag `serial` est actif** (1 ligne = 1 commande,
-STATUS en lignes) ; sinon **aucun CDC n'est exposé** (la console de debug a été
+interface 0), **créé seulement si le flag `serial` est actif** (1 commande par ligne
+terminée CR, LF ou CRLF, **ou** trame `STX JSON ETX` ; réponses terminées CR LF, au format
+de la dernière commande reçue) ; sinon **aucun CDC n'est exposé** (la console de debug a été
 supprimée — un module neuf n'a que le HID). Un maître peut s'appairer en **étoile**
 avec jusqu'à **`MAX_SLAVES` = 3**
 esclaves (`ble_link.h`). **Le maître (id 0) injecte le HID/GPIO/COM LOCALEMENT** et
@@ -195,7 +207,9 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
   `com` (`USBCDC::write` peut bloquer 250 ms) ; **chaque client BLE du maître
   (connect / writeValue / getRssi) → SA tâche `linkN` uniquement** (`writeValue`
   attend un événement GATTC : interdit depuis un callback BLE) ; entrées GPIO →
-  tâche `gpio`. Les callbacks BTC (`onWrite`, notify client) ne font que copier
+  tâche `gpio` ; **sorties GPIO** → worker (commandes) + tâche `gpiofx` (transitions
+  temporisées de TOUTES les sorties, endormie jusqu'à la prochaine échéance ; PWM matériel
+  LEDC), les deux sous `g_gpioMux`. Les callbacks BTC (`onWrite`, notify client) ne font que copier
   dans une file (les notify esclaves → file de relais partagée, drainée par `relay`).
 - **Les interfaces USB sont enregistrées dans les constructeurs** (`USBHIDKeyboard()`,
   `USBCDC`) : les objets HID sont créés par `new` selon `g_cfg` **avant** `USB.begin()`,
@@ -217,9 +231,12 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
   (`ble_link`), appeler **`client->secureConnection()`** après `connect()` **avant**
   tout `writeValue` (CMD = AUTHEN). L'effacement des bonds (`ble_store_clear` /
   `ble_gap_unpair`) accompagne tout changement de passkey et tout désappairage.
-- **STOP est hors-file** : détecté dans le callback d'écriture, il vide la file et
-  interrompt immédiatement la séquence en cours (`g_stop`) au lieu d'attendre son
-  tour ; sur un maître il est **diffusé à TOUS les esclaves** (hors-file des deux côtés).
+- **STOP est hors-file** : `isStopCommand()` le reconnaît **exactement** (`{"t":"stop"}`
+  ou l'alias `{"t":"seq","n":"stop"}`, analyse JSON filtrée après un pré-filtre gratuit) —
+  **jamais** par recherche du mot « stop », qui bloquait `{"t":"txt","v":"stop"}`. Il vide
+  la file et interrompt immédiatement la séquence en cours (`g_stop`) au lieu d'attendre
+  son tour ; sur un maître il est **diffusé à TOUS les esclaves** (hors-file des deux côtés).
+  Il ne touche pas aux effets GPIO (`{"t":"gpio","a":"clr"}` les arrête).
 
 ### Firmware — fichiers
 
@@ -232,9 +249,12 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
   du module (`NAME_MAX`=20) ; helpers `secPasskeyValid`/`secWifiPskValid`/`slaveSetName`).
   Ajouter un champ à `slave_nv_t` change `sizeof(slaves)` → l'ancien blob NVS est ignoré
   au 1er boot (table vidée) : un re-flash impose de ré-appairer (acceptable).
-- `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC.
+- `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC ;
+  tramage ligne (CR/LF/CRLF) ou `STX…ETX` (resynchronisation, JSON multi-ligne).
 - `gpio_panel.h` : table `GPIO_TABLE[]` (BOOT + sorties 4–7 + entrées 8–11,
-  nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`.
+  nommage sérigraphie SuperMini), scrutation anti-rebond, `gpioHandle()`, effets
+  autonomes des sorties (`g_fx[]`, tâche `gpiofx`, `loop` logiciel + `pwm` LEDC).
+  Description complète du protocole : `WEB/Landing/protocole.html`.
 - `ble_link.h` : étoile multi-esclaves. scan / bind (id auto) / unbind (par id ou
   tous) exécutés dans le worker + une tâche `linkN` par esclave (reconnexion,
   écriture, RSSI, événements `link`) + tâche `relay` (rediffuse les STATUS des
@@ -262,7 +282,9 @@ ajout par scan → bind, et le **test de liaison** par cible (`linkTest()` + sé
 `#linkTarget` : pings numérotés au maître ou à un esclave, RTT, pertes). L'onglet
 GPIO affiche **une section par carte** (`buildGpioModules()` : maître id 0 + chaque
 esclave, tout sur un écran) ; chaque élément porte `data-gid`+`data-gpio`, le clic
-route via `send(…, id)` et `onGpio()` cible `[data-gid][data-gpio]`. « Relire tout »
+route via `send(…, id)` et `onGpio()` cible `[data-gid][data-gpio]`. Sur une sortie,
+clic = `tgl`, **appui long** (`bindLongPress`, 450 ms, ou clic droit) = popup `#gpioFx`
+(`openGpioFx`) : `loop` ou `pwm` en **durée infinie** (ni `nb` ni `t_pwm`), « Arrêter » = `clr`. « Relire tout »
 lit toutes les cartes. Les libellés GPIO (`GPIO_OUT`/`GPIO_IN`) doivent rester
 alignés sur `gpio_panel.h`. `WEB/index.html` redirige vers `Keyboard/`.
 

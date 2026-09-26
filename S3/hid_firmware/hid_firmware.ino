@@ -98,6 +98,7 @@ static void statusRaw(const char* s);       // diffusion brute d'une frame deja 
 static void rebootWithStatus(const char* s);
 static void secClearBonds();                // efface TOUS les bonds BLE (changement de passkey / reset)
 static void secUnpairMac(const uint8_t* mac);   // efface le bond d'un pair (desappairage d'un esclave)
+extern uint8_t g_myId;                      // id de cette carte (tag des STATUS, gpio_panel.h)
 
 #include "config.h"                    // parametres NVS (g_cfg)
 
@@ -758,7 +759,10 @@ static void processCommand(const char* json) {
   }
   // id == 0 (ou standard / esclave) : execution locale ci-dessous.
 
-  if (!strcmp(t, "ping")) {
+  if (!strcmp(t, "stop")) {              // normalement traite hors-file (enqueueCommand)
+    releaseAll(); notifyStatus("ready");
+
+  } else if (!strcmp(t, "ping")) {
     char s[24]; snprintf(s, sizeof(s), "pong:%ld", (long)(doc["n"] | 0L));
     notifyStatus(s);
 
@@ -809,6 +813,29 @@ static void processCommand(const char* json) {
 }
 
 // ===========================================================================
+//  STOP prioritaire — reconnaissance EXACTE (champs JSON), jamais par simple
+//  recherche du mot « stop » : {"t":"txt","v":"stop"} doit taper « stop ».
+//    {"t":"stop"}               forme canonique
+//    {"t":"seq","n":"stop"}     alias historique (app web <= v17, esclaves)
+//  Appele depuis les callbacks des transports : pre-filtre gratuit d'abord (la
+//  quasi-totalite des trames, souris comprise, ne contient pas "stop"), analyse
+//  JSON filtree (t, n) seulement si le mot apparait.
+// ===========================================================================
+static bool isStopCommand(const uint8_t* data, size_t len) {
+  bool maybe = false;
+  for (size_t i = 0; i + 4 <= len; i++)
+    if (memcmp(data + i, "stop", 4) == 0) { maybe = true; break; }
+  if (!maybe) return false;
+  JsonDocument filter;
+  filter["t"] = true;
+  filter["n"] = true;
+  JsonDocument doc;
+  if (deserializeJson(doc, (const char*)data, len, DeserializationOption::Filter(filter))) return false;
+  const char* t = doc["t"] | "";
+  return !strcmp(t, "stop") || (!strcmp(t, "seq") && !strcmp(doc["n"] | "", "stop"));
+}
+
+// ===========================================================================
 //  Enfilage d'une commande brute — PARTAGE par BLE, Wi-Fi et COM.
 //  Garde-fou taille + STOP prioritaire hors-file. Les transports ne font que
 //  l'appeler ; l'execution (USB HID) reste au seul worker.
@@ -817,12 +844,9 @@ static void enqueueCommand(const uint8_t* data, size_t len) {
   if (!data || !len) return;
   if (len > CMD_MAX_BYTES) { notifyStatus("err:toolong"); return; }
 
-  // Detection d'un STOP prioritaire : l'appliquer tout de suite (S3 §5.3), sans
-  // le mettre en file derriere une sequence en cours. Serialise BLE vs Wi-Fi.
-  bool isStop = false;
-  for (size_t i = 0; i + 4 <= len; i++)
-    if (memcmp(data + i, "stop", 4) == 0) { isStop = true; break; }
-  if (isStop) {
+  // STOP prioritaire : l'appliquer tout de suite (S3 §5.3), sans le mettre en
+  // file derriere une sequence en cours. Serialise BLE vs Wi-Fi vs COM.
+  if (isStopCommand(data, len)) {
     if (g_stopMux) xSemaphoreTake(g_stopMux, portMAX_DELAY);
     g_stop = true;
     char* p;

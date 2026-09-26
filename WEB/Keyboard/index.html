@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=17" />
+  <link rel="stylesheet" href="style.css?v=19" />
 </head>
 <body>
 <div class="app">
@@ -88,8 +88,9 @@
     <section id="tab-gpio" class="tabpage scrollpage">
       <div class="row wrap" style="margin-bottom:8px">
         <button id="btnGpioRead" class="btn ghost">Relire tout</button>
-        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties = bascule au clic ;
-          entrées = voyants (pull-up, actif bas). Nommage = sérigraphie SuperMini ; BOOT = bouton intégré.</span>
+        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties = bascule au clic,
+          <b>appui long = clignotement ou PWM</b> exécuté par la carte ; entrées = voyants (pull-up, actif bas).
+          Nommage = sérigraphie SuperMini ; BOOT = bouton intégré.</span>
       </div>
       <div id="gpioModules"></div>
     </section>
@@ -250,9 +251,53 @@
   </div>
 </div>
 
+<!-- Popup « effet » d'une sortie GPIO (appui long) : clignotement ou PWM, durée infinie -->
+<div id="gpioFx" class="popup hidden">
+  <div class="popup-inner fx-inner" role="dialog" aria-labelledby="fxTitle">
+    <div class="popup-head"><span id="fxTitle">Sortie</span> <button id="btnFxClose" class="btn ghost icon" aria-label="Fermer">✕</button></div>
+    <div id="fxRunning" class="hint fxrun hidden">● Un effet tourne déjà sur cette sortie : le lancer le remplace.</div>
+    <div id="fxModes" class="fxseg">
+      <button class="btn active" data-mode="loop">Clignotement</button>
+      <button class="btn" data-mode="pwm">PWM</button>
+    </div>
+
+    <div class="fxpane" data-pane="loop">
+      <div id="fxPresets" class="fxchips">
+        <button class="btn" data-preset="lent">Lent</button>
+        <button class="btn" data-preset="normal">Normal</button>
+        <button class="btn" data-preset="rapide">Rapide</button>
+        <button class="btn" data-preset="eclat">Éclat</button>
+      </div>
+      <label class="sens">Allumé <input id="fxSet" type="range" min="10" max="3000" step="10" value="500"><span id="fxSetVal" class="fxval">500 ms</span></label>
+      <label class="sens">Éteint <input id="fxClr" type="range" min="10" max="3000" step="10" value="500"><span id="fxClrVal" class="fxval">500 ms</span></label>
+      <div id="fxLoopInfo" class="hint">–</div>
+    </div>
+
+    <div class="fxpane hidden" data-pane="pwm">
+      <label class="sens wide">Rapport cyclique <input id="fxDuty" type="range" min="0" max="100" step="1" value="50"><span id="fxDutyVal" class="fxval">50 %</span></label>
+      <div class="fxlabel">Fréquence</div>
+      <div id="fxHz" class="fxchips">
+        <button class="btn" data-hz="100">100 Hz</button>
+        <button class="btn active" data-hz="1000">1 kHz</button>
+        <button class="btn" data-hz="5000">5 kHz</button>
+        <button class="btn" data-hz="20000">20 kHz</button>
+      </div>
+      <div id="fxPwmInfo" class="hint">–</div>
+    </div>
+
+    <div class="hint fxnote">Durée infinie : l'effet tourne sur la carte, sans trafic radio, jusqu'à une nouvelle commande
+      sur cette sortie (clic = bascule, ou « Arrêter »).</div>
+    <div class="row">
+      <button id="btnFxStop" class="btn danger">Arrêter</button>
+      <div class="spacer"></div>
+      <button id="btnFxRun" class="btn primary">Lancer</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=17"></script>
-<script src="pwa.js?v=17"></script>
+<script src="app.js?v=19"></script>
+<script src="pwa.js?v=19"></script>
 </body>
 </html>

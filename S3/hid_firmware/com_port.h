@@ -16,6 +16,18 @@
 //                   le flux propre. Vitesse nominale (USB CDC l'ignore : 9600 8N1
 //                   côté hôte convient).
 //
+//  Tramage (RX) — deux formes, reconnues en permanence :
+//    - LIGNE   : JSON terminé par CR, LF ou CRLF (terminaux, scripts simples) ;
+//    - TRAME   : STX (0x02) + JSON + ETX (0x03), CR LF facultatifs après ETX
+//                (automates). STX ouvre une trame NEUVE (tout reste partiel est
+//                jeté : resynchronisation après un envoi interrompu) ; entre STX
+//                et ETX, CR/LF sont de simples blancs JSON (JSON multi-ligne
+//                accepté). JSON n'autorise aucun caractère de contrôle brut dans
+//                ses chaînes : STX/ETX ne peuvent donc pas apparaître dans une
+//                commande valide.
+//  Réponses (TX) : terminées par CR LF. Elles adoptent le format de la DERNIÈRE
+//  commande reçue sur ce port : ligne -> « JSON CR LF » ; trame -> « STX JSON ETX CR LF ».
+//
 //  Invariant : USBCDC::write peut bloquer (tx_lock + timeout) si l'hôte a ouvert
 //  le port sans le lire -> SEULE la tâche `com` écrit le protocole ; notifyStatus
 //  ne fait que poster dans une file (comQueueStatus).
@@ -39,30 +51,40 @@ static void comQueueStatus(const char* s) {
   xQueueSend(g_comTxQueue, item, 0);
 }
 
+static const char COM_STX = 0x02, COM_ETX = 0x03;
+
 static void comTask(void*) {
   static char line[CMD_MAX_BYTES + 1];
   size_t len = 0;
   bool overflow = false;
+  bool inFrame  = false;        // entre STX et ETX
+  bool framedTx = false;        // format des réponses = celui de la dernière commande reçue
   char item[STATUS_MAX];
   for (;;) {
-    // --- RX : accumule jusqu'au \n ---
+    // --- RX : ligne (CR / LF / CRLF) ou trame STX…ETX ---
     while (g_com->available()) {
       int c = g_com->read();
       if (c < 0) break;
-      if (c == '\r') continue;
-      if (c == '\n') {
+      if (c == COM_STX) { len = 0; overflow = false; inFrame = true; continue; }   // trame neuve
+      bool eol = (c == COM_ETX) || (!inFrame && (c == '\r' || c == '\n'));
+      if (eol) {
         if (overflow) notifyStatus("err:toolong");
-        else if (len) enqueueCommand((const uint8_t*)line, len);
-        len = 0; overflow = false;
+        else if (len) {
+          framedTx = inFrame && c == COM_ETX;
+          enqueueCommand((const uint8_t*)line, len);
+        }
+        len = 0; overflow = false; inFrame = false;   // CR LF après ETX : lignes vides, ignorées
         continue;
       }
-      if (len < CMD_MAX_BYTES) line[len++] = (char)c;
+      if (len < CMD_MAX_BYTES) line[len++] = (char)c;   // en trame, CR/LF = blancs JSON
       else overflow = true;
     }
-    // --- TX : draine la file de statuts (lignes protocole propres) ---
+    // --- TX : draine la file de statuts (réponses protocole propres) ---
     while (xQueueReceive(g_comTxQueue, item, 0) == pdTRUE) {
+      if (framedTx) g_com->write((const uint8_t*)&COM_STX, 1);
       g_com->write((const uint8_t*)item, strlen(item));
-      g_com->write((const uint8_t*)"\n", 1);
+      if (framedTx) g_com->write((const uint8_t*)&COM_ETX, 1);
+      g_com->write((const uint8_t*)"\r\n", 2);
     }
     vTaskDelay(pdMS_TO_TICKS(5));
   }

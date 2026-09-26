@@ -37,7 +37,8 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 - **Appairage en étoile** (BLE ↔ BLE, jusqu'à 3 esclaves) : le maître injecte le HID
   localement (id 0) et **route les GPIO par `id`** vers l'esclave désigné ; désappairage
   physique par **5 appuis sur BOOT**.
-- **Panneau GPIO** pilotable (sorties 4–7, entrées 8–11) + **LED RGB d'état**.
+- **Panneau GPIO** pilotable (sorties 4–7, entrées 8–11), avec **clignotement et PWM
+  autonomes** exécutés par la carte (aucun trafic radio par transition) + **LED RGB d'état**.
 - **Paramètres persistants** en NVS (`cfg`), pilotables depuis l'app (panneau Réglages).
 - **Optimisation conso/chaleur** : CPU à 160 MHz, puissance TX radios réduite en
   usage standard (BLE gardé à fond en mode appairé). Voir plus bas.
@@ -47,7 +48,8 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 ```
 .
 ├── README.md                      ← ce fichier (vue d'ensemble)
-├── serve.bat / serve.py           ← serveur HTTPS local (accès téléphone Android)
+├── serve.bat / serve.py           ← serveur HTTPS local (accès téléphone Android) + API de pré-inscription
+├── inscriptions.py                ← pré-inscriptions « Je veux mon S3-KBD » (SQLite data/, non versionné)
 ├── ressources/                    ← cahiers des charges + doc carte (fournis)
 ├── S3/
 │   ├── hid_firmware_compile.bat   ← régénère web_assets.h + compile
@@ -67,10 +69,14 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 └── WEB/                           ← LOT WEB
     ├── index.html                 ← redirige vers Keyboard/
     ├── ssl/                        ← certificat auto-signé (généré par serve.bat)
-    └── Keyboard/                  ← app statique Web Bluetooth / WebSocket
+    ├── Landing/                   ← site public, NON embarqué dans le firmware
+    │   ├── landing.html           ← page commerciale + popup de pré-inscription
+    │   ├── notice.html            ← notice technique (schémas, réglages d'usine, LED…)
+    │   └── protocole.html         ← référence du protocole du port COM
+    └── Keyboard/                  ← app statique Web Bluetooth / WebSocket (embarquée)
         ├── index.html · style.css · app.js
         ├── pwa.js · sw.js · manifest.webmanifest   ← PWA
-        ├── accept.html · notice.html · icons/
+        ├── accept.html · icons/
         └── README.md              ← lancement local / hébergement
 ```
 
@@ -91,12 +97,13 @@ Commandes (JSON UTF-8, champ `t`) :
 | `char` | un caractère (mode direct) | `{"t":"char","v":"é"}` |
 | `txt`  | une chaîne / macro | `{"t":"txt","v":"café à 5 €"}` |
 | `key`  | touche nommée / média (`tap`/`down`/`up`) | `{"t":"key","c":"Enter","a":"tap"}` |
-| `seq`  | séquence prédéfinie, perso (`s[]`) ou `stop` | `{"t":"seq","n":"alt_tab"}` |
+| `seq`  | séquence prédéfinie ou perso (`s[]`) | `{"t":"seq","n":"alt_tab"}` |
+| `stop` | arrêt immédiat (hors file) de la séquence en cours | `{"t":"stop"}` |
 | `mouse`| déplacement / molette / bouton | `{"t":"mouse","dx":10,"dy":-4}` |
 | `ping` | test de liaison | `{"t":"ping","n":12}` → `{"id":0,"ev":"pong","n":12}` |
 | `cfg`  | lire/écrire les flags persistants (`set` redémarre) | `{"t":"cfg","a":"get"}` |
 | `pair` | appairage en étoile (`scan`/`bind`/`slave`/`unbind`/`reset`) | `{"t":"pair","a":"scan"}` |
-| `gpio` | sortie / lecture d'une broche (routable par `id`) | `{"t":"gpio","p":"4","a":"set","id":1}` |
+| `gpio` | sortie / lecture d'une broche (routable par `id`), clignotement `loop` et PWM `pwm` autonomes | `{"t":"gpio","p":"4","a":"loop","t_set":200,"t_clr":800,"nb":5}` |
 
 Masque modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr. Champ **`id`**
 optionnel (0 = maître/local par défaut, 1..3 = esclave) : le maître route la commande.

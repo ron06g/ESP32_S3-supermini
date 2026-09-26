@@ -106,7 +106,7 @@ static void linkPurgeTx(int idx) {
 static void linkPurgeAllTx() { for (int i = 0; i < MAX_SLAVES; i++) linkPurgeTx(i); }
 static void linkBroadcastStop() {
   for (int i = 0; i < MAX_SLAVES; i++)
-    if (g_link[i].up) linkForward(i + 1, "{\"t\":\"seq\",\"n\":\"stop\"}", true);
+    if (g_link[i].up) linkForward(i + 1, "{\"t\":\"stop\"}", true);   // un esclave ancien le reconnait aussi
 }
 
 // Callback notify (contexte tâche BTC) : copie -> file relais, AUCUN appel BLE.

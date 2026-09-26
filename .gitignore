@@ -36,3 +36,7 @@ Desktop.ini
 
 # Config locale Claude Code (serveur de preview)
 .claude/
+
+# --- Pré-inscriptions de la landing (e-mails : données personnelles) ---
+data/
+inscriptions.csv

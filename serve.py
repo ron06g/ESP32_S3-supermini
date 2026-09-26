@@ -8,7 +8,11 @@
 #    HTTPS ou localhost). Depuis un telephone Android, ouvrir https://<IP>:8443
 #    puis accepter l'avertissement de certificat (auto-signe).
 #
-#  Usage : python serve.py [port]      (defaut 8443)
+#  - Recoit les pre-inscriptions de la landing (POST /api/inscription) et les
+#    range dans data/inscriptions.db (SQLite, cf. inscriptions.py).
+#
+#  Usage : python serve.py [port] [--http]   (defaut 8443, HTTPS)
+#          --http : HTTP simple sur localhost uniquement (test local de la landing)
 #  iOS reste impossible (aucun navigateur iOS n'a Web Bluetooth).
 # ===========================================================================
 import http.server
@@ -18,13 +22,27 @@ import sys
 import os
 import datetime
 import ipaddress
+import json
+import threading
+import time
+
+import inscriptions
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR  = os.path.join(BASE_DIR, "WEB")
 SSL_DIR  = os.path.join(WEB_DIR, "ssl")
 CERT     = os.path.join(SSL_DIR, "cert.pem")
 KEY      = os.path.join(SSL_DIR, "key.pem")
-PORT     = int(sys.argv[1]) if len(sys.argv) > 1 else 8443
+ARGS     = [a for a in sys.argv[1:] if not a.startswith("--")]
+PORT     = int(ARGS[0]) if ARGS else 8443
+HTTP     = "--http" in sys.argv[1:]
+
+# Anti-abus de /api/inscription : N envois max par adresse IP et par fenetre.
+SIGNUP_PATH   = "/api/inscription"
+SIGNUP_MAX    = 8
+SIGNUP_WIN_S  = 600
+BODY_MAX      = 4096
+_hits, _hits_lock = {}, threading.Lock()
 
 
 def local_ipv4s():
@@ -101,26 +119,79 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return None
         return super().send_head()
 
+    # --- Pre-inscriptions (landing) ---------------------------------------
+    def _json(self, code, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _too_many(self):
+        ip, now = self.client_address[0], time.monotonic()
+        with _hits_lock:
+            recent = [t for t in _hits.get(ip, []) if now - t < SIGNUP_WIN_S]
+            recent.append(now)
+            _hits[ip] = recent
+            return len(recent) > SIGNUP_MAX
+
+    def do_POST(self):
+        if self.path.split("?", 1)[0] != SIGNUP_PATH:
+            self.send_error(404, "Not Found")
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n <= 0 or n > BODY_MAX:
+            return self._json(413 if n > BODY_MAX else 400, {"ok": False, "err": "format"})
+        if self._too_many():
+            return self._json(429, {"ok": False, "err": "rate"})
+        try:
+            data = json.loads(self.rfile.read(n).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self._json(400, {"ok": False, "err": "format"})
+        if isinstance(data, dict) and data.get("site"):       # pot de miel rempli : robot
+            return self._json(200, {"ok": True})               # reponse neutre, rien n'est stocke
+        fields, err = inscriptions.validate(data)
+        if err:
+            return self._json(400, {"ok": False, "err": err})
+        try:
+            inscriptions.add(fields)
+        except Exception as e:                                  # base verrouillee, disque plein...
+            print(f"[serve] inscription : erreur base ({e})")
+            return self._json(500, {"ok": False, "err": "db"})
+        print(f"[serve] inscription enregistree ({inscriptions.DB_PATH})")
+        return self._json(200, {"ok": True})
+
 
 def main():
-    if not (os.path.exists(CERT) and os.path.exists(KEY)):
-        print("[serve] Pas de certificat, generation...")
-        generate_cert()
+    if HTTP:                                  # test local de la landing : pas de TLS, localhost seul
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        print(f"\n[serve] HTTP (test local) sur le port {PORT} — Ctrl+C pour arreter.")
+        print(f"        Landing : http://localhost:{PORT}/Landing/landing.html\n")
     else:
-        print("[serve] Certificat existant reutilise (WEB/ssl/).")
+        if not (os.path.exists(CERT) and os.path.exists(KEY)):
+            print("[serve] Pas de certificat, generation...")
+            generate_cert()
+        else:
+            print("[serve] Certificat existant reutilise (WEB/ssl/).")
 
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.load_cert_chain(CERT, KEY)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(CERT, KEY)
 
-    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+        httpd = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+        httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
 
-    print(f"\n[serve] HTTPS actif sur le port {PORT} — Ctrl+C pour arreter.")
-    print(f"        Sur ce PC     : https://localhost:{PORT}/")
-    for ip in local_ipv4s():
-        if ip != "127.0.0.1":
-            print(f"        Sur le tel.   : https://{ip}:{PORT}/   (accepter l'avertissement)")
-    print()
+        print(f"\n[serve] HTTPS actif sur le port {PORT} — Ctrl+C pour arreter.")
+        print(f"        Sur ce PC     : https://localhost:{PORT}/")
+        for ip in local_ipv4s():
+            if ip != "127.0.0.1":
+                print(f"        Sur le tel.   : https://{ip}:{PORT}/   (accepter l'avertissement)")
+        print(f"        Landing       : https://localhost:{PORT}/Landing/landing.html")
+        print()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
