@@ -53,8 +53,9 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
 ├── inscriptions.py                ← pré-inscriptions « Je veux mon S3-KBD » (SQLite data/, non versionné)
 ├── ressources/                    ← cahiers des charges + doc carte (fournis)
 ├── S3/
-│   ├── hid_firmware_compile.bat   ← régénère web_assets.h + compile
-│   ├── hid_firmware_flash.bat     ← compile + téléverse ([COMx] auto-détecté)
+│   ├── hid_firmware_compile.bat   ← régénère web_assets.h + compile → firmware/hid_firmware_vYYMM.dd/
+│   ├── hid_firmware_flash.bat     ← téléverse la dernière version de firmware/ (port ESP32 auto-détecté)
+│   ├── firmware/                  ← 1 sous-dossier par version (app + .bootloader + .partitions, non versionnés)
 │   └── hid_firmware/              ← LOT S3 : firmware Arduino ESP32-S3
 │       ├── hid_firmware.ino       ← orchestration (USB, BLE, dispatch, worker)
 │       ├── keymap_azerty.h        ← table AZERTY → HID (pièce critique)
@@ -135,7 +136,8 @@ Le **STATUS est en JSON** (`{"id":n,"st|err|ev":…}`). Détail complet et répo
    arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled S3/hid_firmware
    arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
    ```
-   > Sous Windows : `S3\hid_firmware_compile.bat` puis `S3\hid_firmware_flash.bat [COMx]`.
+   > Sous Windows : `S3\hid_firmware_compile.bat` (publie `S3\firmware\hid_firmware_vYYMM.dd\`)
+   > puis `S3\hid_firmware_flash.bat [COMx] [dossier]` (dernière version, port auto-détecté).
    > **Réglages IDE** : USB Mode = **USB-OTG (TinyUSB)**, USB CDC On Boot = **Disabled**.
    > **Après l'upload : appuyer sur RESET** (sinon la carte reste en ROM).
 2. **Site** — deux options :

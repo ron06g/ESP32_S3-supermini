@@ -77,9 +77,17 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default
 arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
 
-> **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` (régénère `web_assets.h`
-> puis compile) et `S3\hid_firmware_flash.bat [COMx]` (compile + téléverse, port
-> auto-détecté). Ils localisent l'arduino-cli de l'IDE et ciblent `FlashSize=4M`.
+> **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` régénère `web_assets.h`,
+> compile et publie un sous-dossier par version, `S3\firmware\hid_firmware_vYYMM.dd\`,
+> contenant `hid_firmware_vYYMM.dd.bin` + `.bootloader.bin` + `.partitions.bin` (une
+> recompilation le même jour remplace la version du jour).
+> `S3\hid_firmware_flash.bat [COMx ...] [dossier|fichier.bin]` téléverse, **sans
+> recompiler**, la version la plus récente sur le port auto-détecté (USB VID Espressif
+> `303A`, en firmware comme en ROM ; plusieurs modules → menu, `T` = tous). Il écrit
+> bootloader + partitions + app : la **NVS est conservée** (réglages, appairages). Il
+> flashe depuis une copie dans `%TEMP%` (le wrapper `flasher` du cœur y dépose ses
+> `*_flashed.bin`), `firmware\` reste intact. Ils localisent l'arduino-cli de l'IDE et
+> ciblent `FlashSize=4M`.
 
 > **Après l'upload : appuyer sur RESET.** Sur ces cartes, le « hard reset via RTS »
 > qui suit l'upload ne relance pas toujours l'application ; la carte reste alors en
