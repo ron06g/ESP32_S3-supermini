@@ -16,7 +16,8 @@ REM  USBMode=default = "USB-OTG (TinyUSB)" : INDISPENSABLE au HID.
 REM  PartitionScheme=huge_app : l'app par defaut (~1,3 Mo) ne suffit plus
 REM  (BLE + Wi-Fi + USB + app embarquee). PSRAM=enabled : allocs Wi-Fi/LWIP.
 REM
-REM  Regenere web_assets.h (app embarquee) puis compile.
+REM  Regenere web_assets.h (site captif embarque, depuis WEB\Keyboard) puis
+REM  compile. Regeneration BLOQUANTE : pas de firmware avec un site perime.
 REM  Usage :  hid_firmware_compile.bat
 REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -55,6 +56,7 @@ echo ============================================================
 
 echo [1/3] Generation de web_assets.h ...
 call :regen
+if errorlevel 1 goto :err_regen
 
 echo [2/3] Compilation ...
 "%ARDUINO_CLI%" compile --fqbn %FQBN% --output-dir "%BUILD_DIR%" "%SKETCH%"
@@ -89,18 +91,21 @@ set "ARDUINO_CLI="
 exit /b 1
 
 :regen
-REM Regenere l'app embarquee ; non bloquant si Python absent (assets existants).
+REM Regenere l'app embarquee (WEB\Keyboard -> web_assets.h). BLOQUANT : sans
+REM regeneration, le firmware embarquerait un site captif potentiellement perime.
+REM Python est teste en l'executant : le python.exe "Microsoft Store" (WindowsApps)
+REM passe "where" mais n'execute rien.
 set "PY="
-where python >nul 2>&1 && set "PY=python"
+python -c "" >nul 2>&1 && set "PY=python"
 if not defined PY (
-  where py >nul 2>&1 && set "PY=py -3"
+  py -3 -c "" >nul 2>&1 && set "PY=py -3"
 )
 if not defined PY (
-  echo     [!] Python introuvable dans le PATH - web_assets.h existant conserve.
-  exit /b 0
+  echo     [X] Python 3 introuvable ^(ni "python" ni "py -3" ne s'execute^).
+  exit /b 1
 )
 %PY% "%GEN%"
-if errorlevel 1 echo     [!] Echec de la generation - web_assets.h existant conserve.
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :publish
@@ -125,6 +130,13 @@ goto :end
 
 :err_date
 echo [X] Impossible de lire la date (PowerShell indisponible ?).
+set "RC=1"
+goto :end
+
+:err_regen
+echo [X] Regeneration du site embarque impossible : compilation annulee.
+echo     Sans elle, le firmware embarquerait un site captif perime.
+echo     Python 3 requis dans le PATH (python.org, cocher "Add python.exe to PATH").
 set "RC=1"
 goto :end
 

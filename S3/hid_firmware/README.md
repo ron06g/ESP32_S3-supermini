@@ -77,8 +77,9 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default
 arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
 
-> **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` régénère `web_assets.h`,
-> compile et publie un sous-dossier par version, `S3\firmware\hid_firmware_vYYMM.dd\`,
+> **Le plus simple (Windows)** : `S3\hid_firmware_compile.bat` régénère `web_assets.h`
+> (**bloquant** : sans Python 3 ou si la génération échoue, pas de compilation — le
+> firmware n'embarque jamais un site captif périmé), compile et publie un sous-dossier par version, `S3\firmware\hid_firmware_vYYMM.dd\`,
 > contenant `hid_firmware_vYYMM.dd.bin` + `.bootloader.bin` + `.partitions.bin` (une
 > recompilation le même jour remplace la version du jour).
 > `S3\hid_firmware_flash.bat [COMx ...] [dossier|fichier.bin]` téléverse, **sans
