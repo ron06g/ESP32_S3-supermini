@@ -19,18 +19,25 @@ verrouillage paysage best-effort) et **journal en tiroir** (☰) pour libérer l
 
 | Onglet | Contenu |
 |---|---|
-| **AZERTY** | clavier AZERTY complet, modificateurs **collants** (clic = armé *one-shot*, 2ᵉ = **verrou** 🔒, 3ᵉ = off) |
-| **Num** | pavé numérique (chiffres, opérateurs, ⌫, Entrée, Tab…) |
-| **Fn/Média** | F1–F12, Ctrl/Maj/Alt/Win/AltGr, navigation, **télécommande média** |
+| **AZERTY** | clavier AZERTY complet, modificateurs **collants** (clic = armé *one-shot*, 2ᵉ = **verrou** 🔒, 3ᵉ = off) ; **maintien = répétition** |
+| **Num** | pavé numérique (chiffres, opérateurs, ⌫, Entrée, Tab…) ; maintien = répétition |
+| **Fn/Média** | F1–F12, Ctrl/Maj/Alt/Win/AltGr, navigation, **télécommande média** ; Vol± et flèches répétés au maintien (page qui défile : frappe au relâchement, glissement = annulation) |
+| **Bios** | démarrage d'un PC (BIOS/UEFI, menu de boot, GRUB, Windows) : **grosses touches en pavés** — F1–F12, Suppr, Ctrl+Alt+Suppr ; croix de navigation (Entrée au centre), Pg, Début/Fin, **+/− du pavé numérique** (`NumpadAdd`/`NumpadSubtract` : un BIOS lit en QWERTY), Échap, Espace, ⌫ ; Tab, Maj+F10, Y/N, e/c/Ctrl+X, Pause. Ignore les modificateurs collants |
 | **Souris** | trackpad + boutons + molette — ✅ pris en charge par le firmware (USB HID souris) |
 | **Texte** | saisie au **clavier physique/OS** du téléphone, **envoi en direct** (diff → `txt` / `Backspace`) |
 | **Macro** | texte envoyé en une fois (`txt`), garde-fou MTU, macros mémorisées (session) |
 | **Séq.** | éditeur frappe/attente/répétition + préréglage démo + **Stop** + séquences prédéfinies |
-| **GPIO** | sorties 4–7 (boutons bascule) et entrées BOOT, 8–11 (voyants) — `{"t":"gpio",…}` / `gpio:<label>:<v>` ; sur un maître, ce sont les broches de l'esclave |
-| **⚙️ Réglages** (icône de l'en-tête, à côté de « Connecter » ; contient aussi le bouton **Journal**) | config persistante du module (interrupteurs HID clavier / souris / COM / GPIO / appairage → `cfg set` + redémarrage), **appairage BLE ↔ BLE** (Rechercher → Appairer, état du lien, RSSI, Désappairer) et **Test liaison** (20 pings : RTT min/moy/max, pertes) |
+| **GPIO** | une section par carte (maître + esclaves) : sorties `o1`–`o4` (bascule ; appui long = clignotement / PWM autonomes) et entrées BOOT, `i1`–`i4` (voyants) — `{"t":"gpio",…}` |
+| **⚙️ Réglages** (icône de l'en-tête, à côté de « Connecter » ; contient aussi le bouton **Journal**) | config persistante du module (interrupteurs HID clavier / souris / COM / GPIO / appairage → `cfg set` + redémarrage), **appairage BLE ↔ BLE** (Rechercher → Appairer, état du lien, RSSI, Désappairer) et **Test liaison** (20 pings : RTT min/moy/max, pertes). Sous-onglet **📱 Appareil** : **retour au toucher** (vibration / clic / les deux / aucun), préférence du téléphone en `localStorage`, utilisable hors connexion |
+
+**Répétition au maintien** : 1 frappe, puis une toutes les 120 ms après 400 ms (taps
+successifs, jamais `down`/`up` → aucune touche collée). Tous les caractères + ⌫, Suppr,
+Entrée, Espace, Tab, flèches, Pg↑/↓, Vol± ; **jamais** les modificateurs ni les bascules
+(Verr. Maj, Muet, Lecture). La commande est figée à la 1re frappe (Maj armé + maintien de
+« a » = « AAAA »).
 
 À la connexion, l'app envoie `{"t":"cfg","a":"get"}` ; la réponse `cfg:{…}` **masque les
-onglets** des fonctions désactivées (clavier → AZERTY/Num/Fn/Texte/Macro/Séq., souris,
+onglets** des fonctions désactivées (clavier → AZERTY/Num/Fn/Bios/Texte/Macro/Séq., souris,
 GPIO) et la section Appairage si `pair` est à 0. Les STATUS préfixés (`cfg:`, `scan:`,
 `pair:`, `link:`, `gpio:`, `pong:`) sont des événements dispatchés dans `handleStatus`.
 

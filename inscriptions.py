@@ -29,7 +29,7 @@ DB_PATH  = os.path.join(BASE_DIR, "data", "inscriptions.db")
 # À incrémenter si le texte change : on garde la preuve de CE qui a été accepté.
 CONSENT_VERSION = "2026-09-v1"
 
-USAGES   = {"salon", "presentations", "bornes", "escape", "tests", "accessibilite", "autre"}
+USAGES   = {"salon", "presentations", "bornes", "escape", "tests", "accessibilite", "bios", "autre"}
 APPS     = {"android", "iphone", "windows"}
 MSG_MAX  = 500
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s.]{2,}$")

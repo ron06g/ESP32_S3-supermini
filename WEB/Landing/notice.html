@@ -440,7 +440,7 @@
     <thead><tr><th>Réglage</th><th>Valeur d'usine</th><th>Conséquence</th></tr></thead>
     <tbody>
       <tr class="grp"><td colspan="3">Fonctions (onglet Réglages ⚙️ → Fonctions)</td></tr>
-      <tr><td>HID clavier</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Clavier + touches média USB ; onglets AZERTY, Num, Fn/Média.</td></tr>
+      <tr><td>HID clavier</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Clavier + touches média USB ; onglets AZERTY, Num, Fn/Média, Bios.</td></tr>
       <tr><td>HID souris</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Souris USB ; onglet Souris.</td></tr>
       <tr><td>Port COM</td><td class="v"><span class="state no">✗ désactivé</span></td><td class="why">Aucun port série exposé : un module neuf n'apparaît que comme clavier/souris.</td></tr>
       <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO (sorties o1-o4, entrées BOOT et i1-i4).</td></tr>
@@ -550,10 +550,18 @@
     <div class="app"><h4>🖱️ Souris</h4><p>Pavé tactile plein écran (glisser = déplacer, appui bref = clic), clics gauche / milieu / droit,
       molette. Le bouton <b>⌨️</b> ouvre la <b>saisie au clavier du téléphone</b> : le texte est envoyé d'un bloc.</p></div>
     <div class="app"><h4>⌨️ AZERTY</h4><p>Clavier complet, accents et touches mortes compris. <b>Modificateurs collants</b> :
-      1 clic = armé pour la touche suivante, 2 = verrouillé, 3 = relâché.</p></div>
-    <div class="app"><h4>🔢 Num</h4><p>Pavé numérique, opérateurs, parenthèses, <b>€</b>, Entrée et touches d'édition.</p></div>
+      1 clic = armé pour la touche suivante, 2 = verrouillé, 3 = relâché. <b>Maintien</b> = répétition
+      (caractères, Entrée, ⌫, Espace…), jamais sur Ctrl / Alt / Maj ni Verr. Maj ; Maj armé + maintien de «&nbsp;a&nbsp;» = «&nbsp;AAAA&nbsp;».</p></div>
+    <div class="app"><h4>🔢 Num</h4><p>Pavé numérique, opérateurs, parenthèses, <b>€</b>, Entrée et touches d'édition.
+      Maintien = répétition.</p></div>
     <div class="app"><h4>🎛️ Fn / Média</h4><p>Volume, lecture, accueil / retour, F1-F12, navigation, <b>raccourcis Windows</b>
-      prêts à l'emploi, et <b>création de séquence</b> (frappes, attentes, répétitions — tempo tenu par le module).</p></div>
+      prêts à l'emploi, et <b>création de séquence</b> (frappes, attentes, répétitions — tempo tenu par le module).
+      Vol± et flèches se répètent au maintien ; la page défile, donc la frappe part au relâchement et un glissement n'envoie rien.</p></div>
+    <div class="app"><h4>🖥️ Bios</h4><p>Démarrage d'un ordinateur (BIOS / UEFI, menu de boot, GRUB, installation Windows), en
+      <b>grosses touches</b> rangées en pavés : F1-F12, Suppr, <b>Ctrl+Alt+Suppr</b> ; croix de navigation avec Entrée au centre,
+      Pg↑ / Pg↓, Début / Fin, <b>+ / −</b>, Échap, Espace, ⌫ ; Tab, Maj+F10, Y / N, e / c / Ctrl+X (GRUB), Pause.
+      Flèches, Pg, + / − et ⌫ se répètent au maintien. Le + / − passe par le pavé numérique&nbsp;: un BIOS lit le clavier
+      en QWERTY, où le «&nbsp;−&nbsp;» AZERTY donnerait «&nbsp;6&nbsp;». Les modificateurs collants n'y sont pas appliqués.</p></div>
     <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran : sorties
       <b>o1–o4</b> en bascule, entrées <b>i1–i4</b> en voyants (pull-up, actif bas), bouton BOOT.
       Le GPIO physique de chaque repère s'affiche au survol. « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
@@ -561,7 +569,9 @@
       exécuté par la carte en continu jusqu'au prochain clic ou «&nbsp;Arrêter&nbsp;». Une sortie en effet a une bordure qui pulse.</p></div>
     <div class="app cfg"><h4>⚙️ Réglages</h4><p><b>Module</b> : MAC, rôle, renommage. <b>Sécurité</b> : passkey et clé Wi-Fi
       (état « usine » / « personnalisée », valeurs jamais relues). <b>Fonctions</b> : interrupteurs groupés.
-      <b>Appairage</b> : esclaves, scan, test de liaison (20 pings, <b>graphe RTT</b> par module, pertes).</p></div>
+      <b>Appairage</b> : esclaves, scan, test de liaison (20 pings, <b>graphe RTT</b> par module, pertes).
+      <b>Appareil</b> : retour au toucher (vibration, clic sonore, les deux ou aucun), réglage propre au téléphone,
+      utilisable sans module connecté. Par défaut&nbsp;: vibration sur Android, clic sur iPhone (pas de vibration possible depuis Safari).</p></div>
   </div>
   <p class="cardnote">Les onglets dont la fonction est désactivée sont masqués. Web Bluetooth : Chrome ou Edge (Android, ordinateur) ;
     iPhone / iPad : passer par le Wi-Fi du module. Pilotage par script : voir le <a href="protocole.html">protocole du port COM</a>.</p>

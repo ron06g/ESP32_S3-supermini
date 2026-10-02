@@ -179,6 +179,11 @@
   .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; padding-top:18px}
   .tags span{font:600 11px/1 var(--f-mono); letter-spacing:.04em; color:var(--slate); background:var(--mist);
     border-radius:6px; padding:6px 8px}
+  /* Carte pleine largeur (7e usage) : touche | texte | étiquettes sur une ligne */
+  .use.wide{grid-column:1/-1; display:grid; grid-template-columns:auto minmax(0,1fr) auto; column-gap:28px; align-items:center}
+  .use.wide .cap{margin-bottom:0}
+  .use.wide p{max-width:68ch}
+  .use.wide .tags{margin-top:0; padding-top:0; justify-content:flex-end; max-width:260px}
 
   /* ---------- Mise en route ---------- */
   .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:40px}
@@ -354,6 +359,9 @@
     .rail div:nth-child(odd){border-left:0; padding-left:0}
     .rail div:nth-child(n+3){border-top:1px solid var(--ink-line)}
     .uses,.steps,.secgrid{grid-template-columns:1fr}
+    .use.wide{display:flex; align-items:stretch}
+    .use.wide .cap{margin-bottom:22px}
+    .use.wide .tags{margin-top:auto; padding-top:18px; justify-content:flex-start; max-width:none}
     .steps{gap:36px}
     .channels{grid-template-columns:1fr; margin-top:48px}
     .channels div,.channels div + div{padding:20px 0 18px; border-left:0}
@@ -498,6 +506,16 @@
           un ordinateur sans clavier ni souris physiques.</p>
         <div class="tags"><span>Souris</span><span>Saisie texte</span></div>
       </article>
+      <article class="use wide">
+        <div class="cap" aria-hidden="true">F2</div>
+        <div>
+          <h3 class="h3">Démarrage, BIOS et dépannage</h3>
+          <p>Un PC sans clavier qui ne démarre pas&nbsp;? Un écran dédié, en grosses touches&nbsp;: entrer dans le BIOS ou l'UEFI,
+            choisir le disque de démarrage, changer un réglage, piloter GRUB ou l'installation de Windows,
+            puis Ctrl+Alt+Suppr pour relancer.</p>
+        </div>
+        <div class="tags"><span>Touches F</span><span>Navigation</span><span>BIOS / UEFI</span><span>GRUB</span></div>
+      </article>
     </div>
   </div>
 </section>
@@ -530,8 +548,8 @@
       <div class="step">
         <div class="numcap" aria-hidden="true"><span class="t">3</span><span class="b">"</span><span class="r">#</span></div>
         <h3 class="h3">Pilotez</h3>
-        <p>Clavier AZERTY complet, pavé tactile, touches média, raccourcis, séquences et entrées/sorties.
-          Le module traduit, la machine reçoit de vraies frappes.</p>
+        <p>Clavier AZERTY complet, pavé tactile, touches média, écran de démarrage (BIOS), raccourcis, séquences
+          et entrées/sorties. Le module traduit, la machine reçoit de vraies frappes.</p>
       </div>
     </div>
 
@@ -694,6 +712,7 @@
         <h3 class="h3">Le socle</h3>
         <ul>
           <li>Clavier AZERTY, souris et touches média</li>
+          <li>Écran de démarrage&nbsp;: BIOS, UEFI, GRUB</li>
           <li>Bluetooth, Wi-Fi et port série</li>
           <li>Jusqu'à 3 modules satellites</li>
           <li>Application web, installable sur l'écran d'accueil</li>
@@ -737,7 +756,8 @@
         <small>Réseau propre au module, protégé WPA2.</small></dd></div>
       <div><dt>Port série</dt><dd>Scripts et automates (PC, Raspberry Pi), une ligne JSON par commande.
         <small>Désactivé par défaut, s'active dans les réglages. <a href="protocole.html">Voir le protocole</a>.</small></dd></div>
-      <div><dt>Commandes</dt><dd>Clavier complet, souris, molette, touches média, F1-F12, raccourcis, séquences.</dd></div>
+      <div><dt>Commandes</dt><dd>Clavier complet, souris, molette, touches média, F1-F12, raccourcis, séquences.
+        <small>Écran dédié au démarrage (BIOS / UEFI, GRUB). Répétition au maintien, retour par vibration ou clic.</small></dd></div>
       <div><dt>Entrées / sorties</dt><dd>4 sorties (o1–o4) et 4 entrées (i1–i4) par module, plus un bouton.
         <small>Clignotement et PWM autonomes&nbsp;: le module les exécute seul, sans trafic radio.</small></dd></div>
       <div><dt>Extension</dt><dd>Un maître et jusqu'à 3 modules satellites.</dd></div>
@@ -773,6 +793,12 @@
         <summary>Quelle disposition de clavier est prise en charge&nbsp;?</summary>
         <p>L'AZERTY français, accents, € et touches mortes (â, ë…) compris. La machine cible doit être réglée
           dans cette disposition. Un caractère qui n'existe pas en AZERTY est ignoré plutôt que tapé de travers.</p>
+      </details>
+      <details>
+        <summary>Peut-on s'en servir dans le BIOS, avant le démarrage du système&nbsp;?</summary>
+        <p>C'est le rôle de l'écran Bios de l'application&nbsp;: F1-F12, Suppr, flèches, + / −, Entrée, Échap et Ctrl+Alt+Suppr
+          en grosses touches. Le module se présente comme un clavier de démarrage standard. Avant le système, l'écran lit
+          le clavier en disposition anglaise&nbsp;: l'écran Bios n'envoie que des touches qui n'en dépendent pas.</p>
       </details>
       <details>
         <summary>Faut-il un pilote sur la machine cible&nbsp;?</summary>
@@ -868,6 +894,7 @@
         <label><input type="radio" name="usage" value="escape"><span>Escape game</span></label>
         <label><input type="radio" name="usage" value="tests"><span>Tests</span></label>
         <label><input type="radio" name="usage" value="accessibilite"><span>Accessibilité</span></label>
+        <label><input type="radio" name="usage" value="bios"><span>BIOS / démarrage</span></label>
         <label><input type="radio" name="usage" value="autre"><span>Autre</span></label>
       </fieldset>
 

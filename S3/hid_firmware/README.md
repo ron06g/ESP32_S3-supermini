@@ -206,6 +206,8 @@ Avec un client BLE générique (**nRF Connect**, LightBlue…) :
      cible n'est pas en AZERTY : c'est le piège n°1).
    - `{"t":"txt","v":"café à 5 €"}` → reproduit la chaîne accentuée.
    - `{"t":"key","c":"Enter","a":"tap"}` → valide une ligne.
+   - `{"t":"key","c":"NumpadAdd"}` / `"NumpadSubtract"` → **+ / −** du pavé numérique,
+     indépendants de la disposition (à utiliser dans un BIOS/UEFI, qui lit en QWERTY).
    - `{"t":"char","v":"c","m":1}` → **Ctrl+C**.
    - Séquence tempo (socle §5.3) : `{"t":"seq","s":[{"tap":"1"},{"wait":1000},{"tap":"2"},{"wait":1000},{"rep":3,"every":4000,"tap":"3"}]}`.
    - Arrêt : `{"t":"stop"}` (hors file ; l'ancienne forme `{"t":"seq","n":"stop"}` reste acceptée).

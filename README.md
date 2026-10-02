@@ -41,6 +41,11 @@ Ce qui fonctionne aujourd'hui (validation **manuelle**, pas de tests automatisé
   numérotés à partir de 1 ; + bouton `BOOT`), avec **clignotement et PWM
   autonomes** exécutés par la carte (aucun trafic radio par transition) + **LED RGB d'état**.
 - **Paramètres persistants** en NVS (`cfg`), pilotables depuis l'app (panneau Réglages).
+- **App web** : **répétition au maintien** des touches (caractères, ⌫, Entrée, flèches,
+  Vol±… jamais les modificateurs) et **retour au toucher** (vibration / clic, réglage
+  du téléphone). Onglet **Bios** : grosses touches en pavés pour le démarrage
+  (BIOS/UEFI, menu de boot, GRUB) ; +/− via `NumpadAdd`/`NumpadSubtract` (un BIOS lit
+  en QWERTY). Interface HID déclarée *boot* — **essai sur un vrai BIOS à faire**.
 - **Optimisation conso/chaleur** : CPU à 160 MHz, puissance TX radios réduite en
   usage standard (BLE gardé à fond en mode appairé). Voir plus bas.
 

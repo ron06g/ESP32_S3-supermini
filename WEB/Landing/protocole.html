@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>S3-KBD — Protocole du port COM</title>
-<meta name="description" content="Référence complète du protocole série de S3-KBD : activation, paramètres de liaison, format des commandes et des réponses, codes d'erreur, exemples Python, PowerShell et Bash." />
+<meta name="description" content="Référence complète du protocole série de S3-KBD : activation, paramètres de liaison, format des commandes et des réponses, codes d'erreur, exemples Python, PowerShell, Bash et BIOS." />
 <meta name="theme-color" content="#0F1724" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='8' width='56' height='52' rx='12' fill='%23B8400F'/%3E%3Crect x='4' y='4' width='56' height='50' rx='12' fill='%23FF5A1F'/%3E%3Ctext x='14' y='32' font-family='Arial' font-weight='700' font-size='20' fill='%230F1724'%3ES3%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -875,6 +875,17 @@ cat /dev/ttyACM0 &                               # affiche les réponses
 printf '%s\n' '{"t":"txt","v":"Bonjour\n"}' > /dev/ttyACM0
 printf '%s\n' '{"t":"key","c":"MediaPlayPause"}' > /dev/ttyACM0</pre></div>
 
+  <h3 id="ex-bios">BIOS / UEFI <small>entrer dans le setup au démarrage</small></h3>
+  <p>La touche d'accès (F2, Suppr, F10…) doit tomber dans une fenêtre très courte&nbsp;: une séquence la répète, au tempo
+    du module, et <code>stop</code> l'interrompt dès que l'écran du setup s'affiche. Ensuite, n'utilisez que des touches
+    nommées&nbsp;: avant le système, la machine lit le clavier en QWERTY US (voir «&nbsp;Limites&nbsp;»).</p>
+  <div class="code"><pre class="json">→ {"t":"seq","s":[{"rep":40,"every":250,"tap":"F2"}]} <span class="j-c">// 10 s de F2</span>
+→ {"t":"stop"}                                        <span class="j-c">// setup affiché</span>
+→ {"t":"key","c":"ArrowDown"}                         <span class="j-c">// naviguer</span>
+→ {"t":"key","c":"NumpadAdd"}                         <span class="j-c">// + (pavé num.)</span>
+→ {"t":"key","c":"F10"}                               <span class="j-c">// enregistrer</span>
+→ {"t":"char","v":"y"}                                <span class="j-c">// confirmer</span></pre></div>
+
   <h3 id="ex-terminal">Terminal interactif</h3>
   <p>Tout terminal série convient&nbsp;: CR, LF et CRLF terminent tous une commande. Activez l'écho local pour voir ce que vous tapez&nbsp;:</p>
   <ul class="list">
@@ -891,6 +902,12 @@ printf '%s\n' '{"t":"key","c":"MediaPlayPause"}' > /dev/ttyACM0</pre></div>
   <ul class="list">
     <li><b>Disposition</b>&nbsp;: la machine cible doit être en AZERTY français. Les majuscules accentuées et les caractères
       absents d'un clavier français renvoient <code>unmapped</code>&nbsp;: rien n'est tapé au hasard.</li>
+    <li><b>BIOS / UEFI</b>&nbsp;: le module se présente comme un clavier compatible démarrage («&nbsp;boot&nbsp;»), mais avant le
+      système la machine lit le clavier en <b>QWERTY US</b>. Utilisez les touches nommées (F1–F12, flèches, <code>Enter</code>,
+      <code>Escape</code>, <code>Delete</code>, <code>NumpadAdd</code> / <code>NumpadSubtract</code> pour + / −) plutôt que
+      <code>char</code>&nbsp;: un <code>-</code> AZERTY y donnerait «&nbsp;6&nbsp;». Les lettres y, n, e, c, x sont au même endroit
+      dans les deux dispositions. Évitez la souris et les touches média pendant le BIOS&nbsp;: elles peuvent y produire des
+      frappes parasites.</li>
     <li><b>Aucun chiffrement</b>&nbsp;: le port COM est un canal physique de confiance. Quiconque accède à la machine hôte peut
       piloter le module.</li>
     <li><b>Un seul port série</b>&nbsp;: il n'existe que si le réglage <code>serial</code> est actif, et sert uniquement au protocole
