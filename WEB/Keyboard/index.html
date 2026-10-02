@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=22" />
+  <link rel="stylesheet" href="style.css?v=26" />
 </head>
 <body>
 <div class="app">
@@ -76,7 +76,7 @@
 
     <!-- Souris : surface maximale -->
     <section id="tab-mouse" class="tabpage mousepage active">
-      <div id="trackpad" class="trackpad"><span>Zone tactile — glissez pour déplacer le curseur, appui bref = clic gauche</span></div>
+      <div id="trackpad" class="trackpad"><span>Zone tactile — glissez pour déplacer le curseur, appui bref = clic gauche, appui long = clic maintenu (glisser)</span></div>
       <div class="mbtns">
         <button id="btnTextInput" class="btn mbtn text" title="Saisie clavier smartphone">⌨️</button>
         <button class="btn mbtn" data-mb="left">Clic gauche</button>
@@ -244,6 +244,17 @@
             <div id="fbNoVibrate" class="hint hidden">Ce navigateur ne sait pas faire vibrer le téléphone
               (iPhone / Safari) : utilisez le clic, coupé par le mode silencieux.</div>
           </div>
+
+          <div class="cfgblock">
+            <h3>Application</h3>
+            <div class="kv"><span>Version</span><b id="appVersion">–</b></div>
+            <div class="row wrap">
+              <button id="btnReloadApp" class="btn primary">⟳ Recharger le site</button>
+            </div>
+            <div class="hint">Récupère la dernière version du site. Utile quand l'application est installée
+              sur l'écran d'accueil : elle ne se met pas à jour d'elle-même. Le site doit être joignable
+              (sinon rien n'est effacé) ; la connexion au module est coupée.</div>
+          </div>
         </div>
       </div>
     </section>
@@ -320,7 +331,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=22"></script>
-<script src="pwa.js?v=22"></script>
+<script src="app.js?v=26"></script>
+<script src="pwa.js?v=26"></script>
 </body>
 </html>

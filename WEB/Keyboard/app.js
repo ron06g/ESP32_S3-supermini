@@ -6,6 +6,9 @@ const SERVICE_UUID = '9f1d0000-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const CMD_UUID     = '9f1d0001-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const STATUS_UUID  = '9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const MOD = { ctrl:1, shift:2, alt:4, gui:8, altgr:16 };
+// Version de l'app, affichée dans Réglages > Appareil. À incrémenter avec les
+// ?v= de index.html et le CACHE de sw.js.
+const APP_VERSION = 26;
 
 let device=null, gatt=null, cmdChar=null, statusChar=null;
 let deviceName='', lastStatus='';
@@ -31,13 +34,14 @@ async function send(obj, reliable=false, id=0) {
 
 // Flux de coordonnées souris (déplacements dx/dy) : voie RAPIDE dédiée.
 // - aucun acquittement (écriture BLE sans réponse / WS non bloquant) ;
-// - fire-and-forget (pas d'await) → pas de sérialisation des écritures ;
 // - PAS de journalisation (chaque frappe DOM du journal saccadait le pointeur).
 // Réservé au déplacement continu ; clics/molette/boutons passent par send() (journalisés).
+// Renvoie la promesse de l'écriture (rejetée si le lien sature : l'appelant
+// recrédite le mouvement), ou null si non connecté.
 function sendMouseMove(dx, dy) {
   const t = activeTransport;
-  if (!t || !t.connected || !t.sendFast) return;
-  try { t.sendFast(JSON.stringify({ t:'mouse', dx, dy })); } catch (e) {}
+  if (!t || !t.connected || !t.sendFast) return null;
+  try { return t.sendFast(JSON.stringify({ t:'mouse', dx, dy })); } catch (e) { return Promise.reject(e); }
 }
 
 // ===========================================================================
@@ -98,6 +102,7 @@ async function bleConnect() {
 function bleDisconnect() { if (gatt && gatt.connected) gatt.disconnect(); onDisconnected(); }
 function onDisconnected() {
   cmdChar = statusChar = gatt = null; lastStatus = ''; cfg = null;
+  gattQueue = Promise.resolve();   // repartir d'une file vide à la reconnexion
   setCfgLocked(true);          // plus de config live : Réglages en lecture seule
   setConn('off'); logLine('err', 'déconnecté');
 }
@@ -143,23 +148,39 @@ function onConnected() { send({ t:'cfg', a:'get' }, true); }
 //  Interface commune : connect(), disconnect(), get connected, send(json, reliable).
 //  L'IHM et l'encodage des commandes ne dépendent que de send() → aucun changement.
 // ===========================================================================
+// Une seule écriture GATT à la fois : Chrome rejette (« GATT operation already in
+// progress ») toute écriture lancée avant que la précédente soit rendue, et la
+// commande était perdue en silence (clic d'un appui bref pendant qu'un petit
+// déplacement part, relâchement d'un bouton pendant un glisser, frappes rapides).
+// Toutes les écritures BLE passent donc par cette file, dans l'ordre. Garde :
+// une écriture qui ne rend jamais la main ne bloque la file que GATT_STALL_MS.
+const GATT_STALL_MS = 1000;
+let gattQueue = Promise.resolve();
+function gattWrite(fn) {
+  const p = gattQueue.then(() => {
+    if (!cmdChar) throw new Error('CMD indisponible');
+    return fn(cmdChar);
+  });
+  gattQueue = Promise.race([p, new Promise((r) => setTimeout(r, GATT_STALL_MS))]).catch(() => {});
+  return p;
+}
 const bleTransport = {
   kind: 'ble',
   connect: bleConnect,
   disconnect: bleDisconnect,
   get connected() { return !!(gatt && gatt.connected); },
-  async send(json, reliable) {
-    if (!cmdChar) throw new Error('CMD indisponible');
+  send(json, reliable) {
     const data = new TextEncoder().encode(json);
-    if (!reliable && cmdChar.writeValueWithoutResponse) await cmdChar.writeValueWithoutResponse(data);
-    else await cmdChar.writeValue(data);
+    return gattWrite((ch) => (!reliable && ch.writeValueWithoutResponse)
+      ? ch.writeValueWithoutResponse(data) : ch.writeValue(data));
   },
   // Voie RAPIDE pour le flux de coordonnées souris : écriture SANS RÉPONSE (aucun
-  // acquittement ATT) et SANS await → pas de sérialisation ni de latence. Jamais
-  // de repli sur writeValue (acquitté) qui saccaderait le pointeur.
+  // acquittement ATT). Jamais de repli sur writeValue (acquitté) qui saccaderait le
+  // pointeur. La promesse est renvoyée pour que la souris n'en ait qu'une en vol.
   sendFast(json) {
-    if (!cmdChar || !cmdChar.writeValueWithoutResponse) return;
-    cmdChar.writeValueWithoutResponse(new TextEncoder().encode(json)).catch(() => {});
+    if (!cmdChar || !cmdChar.writeValueWithoutResponse) return null;
+    const data = new TextEncoder().encode(json);
+    return gattWrite((ch) => ch.writeValueWithoutResponse(data));
   },
 };
 const wifiTransport = {
@@ -172,7 +193,13 @@ const wifiTransport = {
     this.ws.send(json);   // TCP : fiable et ordonné, le drapeau « reliable » est sans objet
   },
   // Voie rapide souris : même canal (le WebSocket n'acquitte pas au niveau appli).
-  sendFast(json) { if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(json); },
+  // Tampon d'émission encombré (Wi-Fi lent) : refus, la souris recrédite et cumule.
+  sendFast(json) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return null;
+    if (this.ws.bufferedAmount > 1024) return Promise.reject(new Error('WS saturé'));
+    this.ws.send(json);
+    return Promise.resolve();
+  },
 };
 function wifiConnect(ip) {
   const url = 'ws://' + ip + ':' + WIFI_WS_PORT + '/';
@@ -449,39 +476,84 @@ function namedCmd(d) {
 // ===========================================================================
 //  Souris — boutons à maintien (drag) + molette répétée + réglage sensibilité
 // ===========================================================================
+// Envoi des déplacements : au plus un paquet toutes les MOUSE_MIN_MS (~60/s) et
+// une seule écriture en vol — le mouvement se cumule pendant qu'elle part, la
+// cadence s'adapte donc seule à ce que le lien accepte. Seule la partie entière
+// part : la fraction de point reste dans le cumul (les gestes lents ne sont plus
+// arrondis à zéro). Écriture refusée = mouvement recrédité, jamais perdu.
+// Doigt resté sur place (sous TAP_SLOP_PX px CSS) :
+//  - relâché avant HOLD_MS = clic gauche ;
+//  - maintenu HOLD_MS = clic MAINTENU : bouton gauche enfoncé (retour au toucher),
+//    le glisser déplace avec le bouton, le relâchement le relâche (sélection,
+//    déplacement de fenêtre, glisser-déposer).
+// Tant que le geste peut encore être l'un ou l'autre, le mouvement est RETENU : le
+// tremblé du doigt ne déplace pas le pointeur avant le clic. Un vrai glissé dépasse
+// le seuil en quelques ms et part aussitôt.
+const MOUSE_MIN_MS = 16, MOUSE_STALL_MS = 250, HOLD_MS = 450, TAP_SLOP_PX = 5;
 function initMouse() {
   const pad = $('#trackpad');
-  let last = null, accX = 0, accY = 0, timer = null, downT = 0, moved = 0;
+  let last = null, accX = 0, accY = 0, timer = null, busy = false, lastSend = 0;
+  let slop = 0, holdTimer = null, dragging = false;
   const sens = () => (+$('#mouseSens').value || 15) / 8;
+  const schedule = () => {
+    if (timer || busy) return;
+    timer = setTimeout(flush, Math.max(0, MOUSE_MIN_MS - (performance.now() - lastSend)));
+  };
   const flush = () => {
-    if (accX || accY) {
-      // Repli rotation CSS (paysage logiciel) : le trackpad est pivoté de 90°
-      // (transform matrix rotate(90°) → local (u,v) affiché en (-v,u)), mais
-      // clientX/clientY restent dans le repère PHYSIQUE de l'écran. On repasse
-      // donc les deltas dans le repère perçu : dx = +dYphys, dy = -dXphys.
-      const dx = cssRotated ? accY : accX;
-      const dy = cssRotated ? -accX : accY;
-      sendMouseMove(Math.round(dx), Math.round(dy));   // voie rapide : pas d'ACK, pas de journal
-      accX = accY = 0;
-    }
     timer = null;
+    const dx = Math.round(accX), dy = Math.round(accY);
+    if (busy || (!dx && !dy)) return;
+    const p = sendMouseMove(dx, dy);             // voie rapide : pas d'ACK, pas de journal
+    if (!p) { accX = accY = 0; return; }          // non connecté : rien à rattraper
+    accX -= dx; accY -= dy; lastSend = performance.now(); busy = true;
+    let done = false, stall = null;
+    const end = () => { if (done) return; done = true; clearTimeout(stall); busy = false; schedule(); };
+    stall = setTimeout(end, MOUSE_STALL_MS);      // écriture sans retour : ne pas figer le pointeur
+    p.then(end, () => { accX += dx; accY += dy; end(); });
   };
   pad.addEventListener('pointerdown', (e) => {
     pad.setPointerCapture(e.pointerId); pad.classList.add('active');
-    last = { x:e.clientX, y:e.clientY }; downT = Date.now(); moved = 0;
+    last = { x:e.clientX, y:e.clientY }; slop = 0;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {                  // resté sur place HOLD_MS : clic maintenu
+      holdTimer = null;
+      if (!last) return;
+      accX = accY = 0;                              // le tremblé retenu est abandonné
+      dragging = true; pad.classList.add('drag'); feedback();
+      send({ t:'mouse', b:'left', a:'down' });
+    }, HOLD_MS);
   });
   pad.addEventListener('pointermove', (e) => {
     if (!last) return;
-    const dx = (e.clientX - last.x) * sens(), dy = (e.clientY - last.y) * sens();
-    last = { x:e.clientX, y:e.clientY }; accX += dx; accY += dy; moved += Math.abs(dx) + Math.abs(dy);
-    if (!timer) timer = setTimeout(flush, 40);
+    const px = e.clientX - last.x, py = e.clientY - last.y;
+    last = { x:e.clientX, y:e.clientY }; slop += Math.abs(px) + Math.abs(py);
+    const dx = px * sens(), dy = py * sens();
+    // Repli rotation CSS (paysage logiciel) : le trackpad est pivoté de 90°
+    // (transform matrix rotate(90°) → local (u,v) affiché en (-v,u)), mais
+    // clientX/clientY restent dans le repère PHYSIQUE de l'écran. On repasse
+    // donc les deltas dans le repère perçu : dx = +dYphys, dy = -dXphys.
+    if (cssRotated) { accX += dy; accY -= dx; } else { accX += dx; accY += dy; }
+    if (holdTimer && slop >= TAP_SLOP_PX) { clearTimeout(holdTimer); holdTimer = null; }   // c'est un glisser
+    if (!holdTimer) schedule();                     // ni clic ni clic maintenu possible : le mouvement part
   });
   const up = () => {
     if (!last) return;
-    last = null; pad.classList.remove('active'); if (timer) { clearTimeout(timer); flush(); }
-    if (Date.now() - downT < 220 && moved < 6) send({ t:'mouse', b:'left', a:'click' });
+    if (dragging) {                                 // fin du clic maintenu : dernier mouvement PUIS
+      clearTimeout(timer); timer = null;            // relâchement, dans l'ordre (file GATT / WebSocket)
+      const dx = Math.round(accX), dy = Math.round(accY);
+      if (dx || dy) { const p = sendMouseMove(dx, dy); if (p) p.catch(() => {}); accX -= dx; accY -= dy; }
+      send({ t:'mouse', b:'left', a:'up' });
+      dragging = false; pad.classList.remove('drag');
+    } else if (holdTimer) {                         // relâché avant HOLD_MS, sur place : clic
+      accX = accY = 0; feedback();                  // le tremblé retenu est abandonné
+      send({ t:'mouse', b:'left', a:'click' });     // file GATT : jamais refusé par un déplacement en vol
+    } else schedule();                              // le reliquat part au prochain créneau
+    clearTimeout(holdTimer); holdTimer = null;
+    last = null; pad.classList.remove('active');
   };
+  // pointercancel aussi : un clic maintenu ne doit jamais rester enfoncé.
   pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+  pad.addEventListener('contextmenu', (e) => e.preventDefault());   // pas de menu d'appui long de Chrome
 
   // Boutons L/M/R : maintien (down/up) -> déplacement de fenêtre avec clic maintenu
   document.querySelectorAll('.mbtn[data-mb]').forEach((b) => {
@@ -1219,6 +1291,30 @@ function setFeedback(mode) {
   fbMode = mode; try { localStorage.setItem(FB_KEY, mode); } catch (e) {}
   renderFeedback(); feedback();             // essai immédiat du mode choisi
 }
+// ---------------------------------------------------------------------------
+//  Rechargement forcé du site. Une PWA installée n'a ni barre d'adresse ni
+//  « tirer pour recharger », et le téléphone la garde en mémoire : elle ne
+//  reprend pas d'elle-même la nouvelle version. On vérifie d'abord que le site
+//  répond — hors ligne, vider le cache rendrait l'appli inutilisable — puis on
+//  efface le cache, on désinscrit le service worker (pwa.js le réinscrit) et on
+//  recharge depuis le réseau.
+// ---------------------------------------------------------------------------
+async function reloadApp() {
+  if (activeTransport && activeTransport.connected &&
+      !confirm('Recharger le site ?\nLa connexion au module sera coupée : reconnectez-vous ensuite.')) return;
+  try {
+    // URL unique : le service worker ne peut pas y répondre depuis son cache (sans
+    // elle, il renverrait la copie d'index.html et le test passerait hors ligne).
+    const r = await fetch('./index.html?joignable=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) { toast('Site injoignable : rien n\'a été effacé, réessayez une fois en ligne'); return; }
+  try {
+    if ('serviceWorker' in navigator)
+      for (const reg of await navigator.serviceWorker.getRegistrations()) await reg.unregister();
+    if (window.caches) for (const k of await caches.keys()) await caches.delete(k);
+  } catch (e) {}
+  location.reload();
+}
 function renderFeedback() {
   document.querySelectorAll('[data-fb]').forEach((b) => {
     const on = b.dataset.fb === fbMode;
@@ -1323,6 +1419,8 @@ function wireUI() {
   // l'autorise que dans un vrai geste (touchend/click), pas au pointerdown.
   document.querySelectorAll('[data-fb]').forEach((b) => b.addEventListener('click', () => setFeedback(b.dataset.fb)));
   renderFeedback();
+  $('#appVersion').textContent = 'v' + APP_VERSION;
+  $('#btnReloadApp').addEventListener('click', reloadApp);
   const unlockAudio = () => { if ((fbMode === 'click' || fbMode === 'both') && (!audioCtx || audioCtx.state !== 'running')) audioReady(); };
   document.addEventListener('touchend', unlockAudio, { passive:true });
   document.addEventListener('click', unlockAudio, true);
@@ -1422,7 +1520,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v22 (répétition + retour au toucher) chargé ===');
+  logLine('in', '=== app.js v' + APP_VERSION + ' chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

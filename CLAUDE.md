@@ -283,7 +283,20 @@ bascules ; commande figée à la 1re frappe (`bindKey`) ; dans Fn/Média (page q
 mode `deferred` = rien à l'appui, glissement = annulation. **Retour au toucher**
 (`feedback()`, appelé par `flash()`) : vibration et/ou clic Web Audio, préférence du
 téléphone en `localStorage`, sous-onglet Réglages « Appareil » (`.cfgpage.local`, jamais
-verrouillé hors connexion). Les
+verrouillé hors connexion). **File GATT unique** (`gattWrite`) : TOUTES les écritures BLE
+(`send` et `sendFast`) passent par une seule file ordonnée — Chrome rejette en silence une
+écriture lancée avant que la précédente soit rendue (clic, frappe ou relâchement de bouton
+perdus) ; garde `GATT_STALL_MS` contre une écriture qui ne rend jamais la main. **Souris**
+(`initMouse`, voie rapide `sendMouseMove` → `sendFast`, non journalisée) : ≤ 1 paquet /
+`MOUSE_MIN_MS` (16 ms), une seule écriture souris en vol, fraction de point conservée,
+écriture refusée recréditée ; doigt sur place (`TAP_SLOP_PX` px CSS) relâché avant
+`HOLD_MS` = clic, maintenu `HOLD_MS` = **clic maintenu** (left down → glisser → up au
+lever, up aussi sur pointercancel) ; le mouvement est retenu tant que le geste peut être
+l'un ou l'autre. **Version** : `APP_VERSION` (app.js) +
+`?v=` (index.html) + `CACHE` (sw.js), à incrémenter ensemble ; Réglages > Appareil l'affiche
+avec **Recharger le site** (`reloadApp()`, pour la PWA installée qui ne se recharge pas
+seule ; teste le serveur sur une URL unique — sinon le SW répond depuis son cache — et
+n'efface rien s'il est injoignable). Les
 **modificateurs collants** (clic = one-shot armé, 2ᵉ = verrou, 3ᵉ = off), le
 garde-fou MTU (`MTU_GUARD` 500 o) et le **journal** (chaque JSON émis + chaque
 STATUS reçu), outil de validation. À la connexion, `onConnected()` envoie

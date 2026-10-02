@@ -129,6 +129,8 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
   border-radius:var(--radius); display:flex; align-items:center; justify-content:center; text-align:center;
   color:var(--text-dim); font-size:13px; padding:10px; touch-action:none; user-select:none; margin-bottom:8px; }
 .trackpad.active { border-color:var(--accent); background:#12233d; color:var(--text); }
+.trackpad.drag { border-style:solid; border-color:var(--armed); background:#211a33; }   /* clic maintenu */
+.trackpad { -webkit-touch-callout:none; }
 .mbtns { display:flex; gap:6px; align-items:stretch; height:58px; overflow-x:auto; scrollbar-width:none; }
 .mbtns::-webkit-scrollbar { display:none; }
 .mbtn { flex:1; display:flex; align-items:center; justify-content:center; font-size:15px; }
