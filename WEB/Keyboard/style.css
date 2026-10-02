@@ -81,7 +81,10 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
   font-size:clamp(14px,2.4vw,24px); font-weight:600; cursor:pointer; user-select:none; overflow:hidden;
   transition:background .1s, transform .04s; }
 .key:hover { background:var(--bg-key-hi); }
-.key:active, .key.flash { background:var(--accent-2); transform:translateY(1px); }
+.key:active, .key.flash, .key.held { background:var(--accent-2); transform:translateY(1px); }
+/* Claviers plein écran (pas de défilement) : la frappe part dès l'appui, le geste
+   tactile n'est pas laissé au navigateur (sinon pointercancel coupe la répétition). */
+.kbpage .key { touch-action:none; -webkit-touch-callout:none; }
 .key.wide { flex-grow:2.2; } .key.wide3 { flex-grow:3.5; } .key.space { flex-grow:7; }
 .key.fn { font-size:clamp(11px,1.6vw,15px); color:var(--text-dim); }
 .key .shift { position:absolute; top:3px; left:5px; font-size:.62em; color:var(--text-dim); }
@@ -103,6 +106,23 @@ code { background:var(--bg-key); padding:1px 5px; border-radius:4px; }
   gap:1px; line-height:1.15; padding:6px 11px; text-align:left; }
 .shortcut .sc-combo { font-weight:700; font-size:14px; }
 .shortcut .sc-fn { font-size:11px; font-weight:500; color:var(--text-dim); }
+
+/* ---- Onglet Bios : pavés de grosses touches (grille CSS par pavé) ----
+   Largeur des pavés ∝ nombre de colonnes (--cols) ; écart entre pavés > écart
+   entre touches pour que les groupes se lisent. */
+.biospage.active { display:flex; flex-direction:column; }
+#bios { flex:1; min-height:0; display:flex; gap:10px; }
+.biospad { flex:var(--cols) 1 0; min-width:0; min-height:0; display:grid; gap:var(--gap);
+  grid-template-columns:repeat(var(--cols),1fr); grid-template-rows:repeat(var(--rows),1fr);
+  background:var(--bg-elev); border-radius:var(--radius); padding:4px; }
+.bioskey { height:auto; font-size:clamp(15px,2.6vw,26px); touch-action:none; -webkit-touch-callout:none; }
+.bioskey.c2 { grid-column:span 2; } .bioskey.r2 { grid-row:span 2; }
+.bioskey.big { font-size:clamp(24px,4.2vw,40px); }   /* flèches, +/−, ⌫ : glyphes petits par nature */
+.bioskey.combo { font-size:clamp(12px,1.7vw,17px); text-align:center; line-height:1.15; }
+.bioskey.enter { background:var(--accent-2); border-color:var(--accent); }
+.bioskey.enter:hover { background:var(--accent); }
+.bioskey.danger { border-color:var(--amber); color:var(--amber); }
+.bioskey.held { background:var(--armed); border-color:var(--armed); color:#fff; }
 
 /* ---- Souris : surface maximale ---- */
 .trackpad { flex:1; min-height:120px; background:var(--bg-elev); border:1.5px dashed var(--border);
@@ -229,11 +249,17 @@ body.tabs-in-header #tabs .tab.active { background:var(--bg-key-hi); color:var(-
 body.is-phone.portrait .kbpage.active { justify-content:flex-end; }
 body.is-phone.portrait .keyboard { max-height:50dvh; }
 body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
+/* Bios en portrait : pavés empilés (hauteur ∝ --rows), Navigation en bas sous le pouce */
+body.portrait #bios { flex-direction:column; }
+body.portrait .biospad { flex:var(--rows) 1 0; }
+body.portrait #bios-tools { --cols:4 !important; --rows:2 !important; }
+body.is-phone.portrait .bioskey.combo { font-size:clamp(11px,3.4vw,15px); }
+body.is-phone.portrait .bioskey.big { font-size:clamp(24px,7.5vw,36px); }
 
 /* Desktop / grand écran : ne pas étirer démesurément le clavier */
 @media (pointer:fine) and (min-height:760px) {
-  .kbpage.active { justify-content:center; }
-  #kb-azerty, #kb-num { max-height:600px; }
+  .kbpage.active, .biospage.active { justify-content:center; }
+  #kb-azerty, #kb-num, #bios { max-height:600px; }
 }
 
 /* ===========================================================================
@@ -258,7 +284,7 @@ body.is-phone.portrait .key { font-size:clamp(15px,4.4vw,22px); }
 .cfg-offline { flex:0 0 auto; margin-top:10px; padding:9px 12px; border-radius:var(--radius);
   background:var(--bg-key); border:1px solid var(--amber); color:var(--amber);
   font-size:13px; line-height:1.4; text-align:center; }
-#tab-cfg.locked .cfgpage { opacity:.5; }
+#tab-cfg.locked .cfgpage:not(.local) { opacity:.5; }
 /* Téléphone : sous-onglets en icônes seules (comme la barre principale) */
 body.is-phone .subtab .tl { display:none; }
 body.is-phone .subtab { padding:9px 0; }

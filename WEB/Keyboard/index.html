@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=20" />
+  <link rel="stylesheet" href="style.css?v=22" />
 </head>
 <body>
 <div class="app">
@@ -43,6 +43,7 @@
     <button class="tab" data-tab="azerty"><span class="ti">⌨️</span><span class="tl">AZERTY</span></button>
     <button class="tab" data-tab="num"><span class="ti">🔢</span><span class="tl">Num</span></button>
     <button class="tab" data-tab="fn"><span class="ti">🎛️</span><span class="tl">Fn/Média</span></button>
+    <button class="tab" data-tab="bios"><span class="ti">🖥️</span><span class="tl">Bios</span></button>
     <button class="tab" data-tab="gpio"><span class="ti">🔌</span><span class="tl">GPIO</span></button>
   </nav>
 
@@ -69,6 +70,9 @@
         </div>
       </div>
     </section>
+
+    <!-- Bios : pavés de grosses touches pour piloter le démarrage (BIOS/UEFI, boot, GRUB) -->
+    <section id="tab-bios" class="tabpage biospage"><div id="bios"></div></section>
 
     <!-- Souris : surface maximale -->
     <section id="tab-mouse" class="tabpage mousepage active">
@@ -102,6 +106,7 @@
         <button class="subtab" data-sub="secu"><span class="ti">🔒</span><span class="tl">Sécurité</span></button>
         <button class="subtab" data-sub="feat"><span class="ti">🎚️</span><span class="tl">Fonctions</span></button>
         <button class="subtab" data-sub="pair"><span class="ti">🔗</span><span class="tl">Appairage</span></button>
+        <button class="subtab" data-sub="device"><span class="ti">📱</span><span class="tl">Appareil</span></button>
       </nav>
 
       <div id="cfgOffline" class="cfg-offline hidden">🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.</div>
@@ -173,7 +178,7 @@
               et une antenne. <b>Au moins un canal de commande (Wi-Fi, COM ou BLE) doit rester actif.</b></div>
 
             <h4 class="switchgrp">Contrôle (HID)</h4>
-            <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Séq. + Texte ; décoché : aucun clavier USB n'est créé</em></label>
+            <label class="switch"><input type="checkbox" data-flag="hid_kb"><span>HID clavier</span><em>onglets AZERTY, Num, Fn, Bios, Séq. + Texte ; décoché : aucun clavier USB n'est créé</em></label>
             <label class="switch"><input type="checkbox" data-flag="hid_ms"><span>HID souris</span><em>onglet Souris ; décoché : aucune souris USB n'est créée</em></label>
 
             <h4 class="switchgrp">Communication (antennes / port)</h4>
@@ -220,6 +225,24 @@
               Lien d'un esclave coupé → <code>{"err":"nolink"}</code>.</div>
             <div class="hint">Astuce : <b>5 appuis sur le bouton BOOT</b> (&lt; 3 s) sur le maître désappairent toute l'étoile ;
               sur un esclave, <code>{"t":"pair","a":"reset"}</code> par son port COM le libère.</div>
+          </div>
+        </div>
+
+        <!-- ---- Sous-onglet : Appareil (préférences de CE téléphone, hors module :
+             .local = jamais verrouillé, utilisable sans connexion) ---- -->
+        <div class="cfgpage local" data-subpage="device">
+          <div class="cfgblock">
+            <h3>Retour au toucher</h3>
+            <div class="row wrap">
+              <button class="btn ghost" data-fb="vibrate">📳 Vibration</button>
+              <button class="btn ghost" data-fb="click">🔊 Clic</button>
+              <button class="btn ghost" data-fb="both">Les deux</button>
+              <button class="btn ghost" data-fb="off">Aucun</button>
+            </div>
+            <div class="hint">À chaque frappe (une seule fois par appui maintenu). Réglage propre à ce
+              téléphone, mémorisé par le navigateur. Le clic suit le volume média.</div>
+            <div id="fbNoVibrate" class="hint hidden">Ce navigateur ne sait pas faire vibrer le téléphone
+              (iPhone / Safari) : utilisez le clic, coupé par le mode silencieux.</div>
           </div>
         </div>
       </div>
@@ -297,7 +320,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=20"></script>
-<script src="pwa.js?v=20"></script>
+<script src="app.js?v=22"></script>
+<script src="pwa.js?v=22"></script>
 </body>
 </html>

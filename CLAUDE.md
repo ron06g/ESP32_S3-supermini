@@ -272,8 +272,18 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
 ### Web — fichiers (`WEB/Keyboard/`)
 
 Client Web Bluetooth pensé **smartphone Android en paysage**. `app.js` définit les
-onglets (AZERTY, Num, Fn/Média, Souris, Texte, Macro, Séq., GPIO ; le panneau
-Réglages s'ouvre par l'icône ⚙️ de l'en-tête et héberge le bouton Journal), les
+onglets (AZERTY, Num, Fn/Média, Bios, Souris, Texte, Macro, Séq., GPIO ; le panneau
+Réglages s'ouvre par l'icône ⚙️ de l'en-tête et héberge le bouton Journal). L'onglet
+**Bios** (`BIOS_PADS`, `buildBios()`) range de grosses touches en pavés (grille CSS) pour
+piloter le démarrage (BIOS/UEFI, boot, GRUB) ; +/− = `NumpadAdd`/`NumpadSubtract` car un
+BIOS lit en QWERTY US ; il ignore les modificateurs collants. **Répétition au maintien**
+(`bindRepeat`, taps successifs, jamais down/up) : tous les caractères + `REPEAT_KEYS`
+(⌫, Suppr, Entrée, Espace, Tab, flèches, Pg↑/↓, Vol±), jamais les modificateurs ni les
+bascules ; commande figée à la 1re frappe (`bindKey`) ; dans Fn/Média (page qui défile)
+mode `deferred` = rien à l'appui, glissement = annulation. **Retour au toucher**
+(`feedback()`, appelé par `flash()`) : vibration et/ou clic Web Audio, préférence du
+téléphone en `localStorage`, sous-onglet Réglages « Appareil » (`.cfgpage.local`, jamais
+verrouillé hors connexion). Les
 **modificateurs collants** (clic = one-shot armé, 2ᵉ = verrou, 3ᵉ = off), le
 garde-fou MTU (`MTU_GUARD` 500 o) et le **journal** (chaque JSON émis + chaque
 STATUS reçu), outil de validation. À la connexion, `onConnected()` envoie

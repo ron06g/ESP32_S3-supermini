@@ -288,6 +288,32 @@ const FN_GROUPS = [
   { title:'Raccourcis', shortcuts: SHORTCUTS },
 ];
 
+// Onglet Bios — pilotage du démarrage (BIOS/UEFI, menu de boot, GRUB, Windows).
+// Pavés en grille CSS (cols × rows) ; span 'c2' = 2 colonnes, 'r2' = 2 rangées.
+// rep = répétition au maintien. Un BIOS lit en QWERTY US : +/− passent par le pavé
+// numérique (NumpadAdd/NumpadSubtract) ; y, n, e, c, x sont au même endroit en AZERTY.
+const kTap = (code, mask) => mask ? { t:'key', c:code, a:'tap', m:mask } : { t:'key', c:code, a:'tap' };
+const BIOS_PADS = [
+  { id:'bios-fn', cols:4, rows:4, keys: [
+    ...Array.from({length:12}, (_,i) => ({ label:'F'+(i+1), cmd:kTap('F'+(i+1)) })),
+    { label:'Suppr', cmd:kTap('Delete'), span:'c2' },
+    { label:'Ctrl+Alt+Suppr', cmd:{t:'seq',n:'ctrl_alt_del'}, span:'c2', cls:'combo danger', reliable:true } ] },
+  { id:'bios-tools', cols:2, rows:4, keys: [
+    { label:'Tab', cmd:kTap('Tab') }, { label:'Maj+F10', cmd:kTap('F10', MOD.shift), cls:'combo', reliable:true },
+    { label:'Y', cmd:{t:'char',v:'y'} }, { label:'N', cmd:{t:'char',v:'n'} },
+    { label:'e', cmd:{t:'char',v:'e'} }, { label:'c', cmd:{t:'char',v:'c'} },
+    { label:'Ctrl+X', cmd:{t:'char',v:'x',m:MOD.ctrl}, cls:'combo', reliable:true }, { label:'Pause', cmd:kTap('Pause'), cls:'combo' } ] },
+  { id:'bios-nav', cols:4, rows:4, keys: [
+    { label:'Pg↑', cmd:kTap('PageUp'), rep:true }, { label:'↑', cmd:kTap('ArrowUp'), rep:true, cls:'big' },
+    { label:'Pg↓', cmd:kTap('PageDown'), rep:true }, { label:'+', cmd:kTap('NumpadAdd'), rep:true, span:'r2', cls:'big' },
+    { label:'←', cmd:kTap('ArrowLeft'), rep:true, cls:'big' }, { label:'Entrée', cmd:kTap('Enter'), cls:'enter' },
+    { label:'→', cmd:kTap('ArrowRight'), rep:true, cls:'big' },
+    { label:'Début', cmd:kTap('Home') }, { label:'↓', cmd:kTap('ArrowDown'), rep:true, cls:'big' },
+    { label:'Fin', cmd:kTap('End') }, { label:'−', cmd:kTap('NumpadSubtract'), rep:true, span:'r2', cls:'big' },
+    { label:'Échap', cmd:kTap('Escape') }, { label:'Espace', cmd:kTap('Space') },
+    { label:'⌫', cmd:kTap('Backspace'), rep:true, cls:'big' } ] },
+];
+
 // ===========================================================================
 //  Rendu des touches
 // ===========================================================================
@@ -297,21 +323,37 @@ function keyLabelChar(d) {
   if (d.altgr) h += `<span class="altgr">${esc(d.altgr)}</span>`;
   return h;
 }
-function makeKey(d) {
+// Touches qui se répètent au maintien : tous les caractères + ces touches nommées.
+// Jamais les modificateurs, les bascules (Verr. Maj, Muet, Lecture…) ni les touches
+// à effet unique (Échap, F1–F12, Début/Fin, Impr…).
+const REPEAT_KEYS = new Set(['Backspace', 'Delete', 'Enter', 'Space', 'Tab',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown',
+  'MediaVolumeUp', 'MediaVolumeDown']);
+// deferred : la touche est dans une page qui défile (Fn/Média), cf. bindRepeat.
+function makeKey(d, deferred = false) {
   if (d.t === 'br') { const b = document.createElement('div'); b.className = 'break'; return b; }
   const el = document.createElement('div');
   if (d.t === 'char') {
     el.className = 'key charkey'; el.innerHTML = keyLabelChar(d);
-    el.addEventListener('click', () => onCharKey(d, el));
+    bindKey(el, () => charCmd(d), true, deferred);
   } else if (d.t === 'key') {
     el.className = 'key ' + (d.cls || 'fn'); el.textContent = d.label;
-    el.addEventListener('click', () => onNamedKey(d, el));
+    bindKey(el, () => namedCmd(d), REPEAT_KEYS.has(d.code), deferred);
   } else if (d.t === 'mod') {
     el.className = 'key mod fn'; el.dataset.mod = d.mod;
     el.innerHTML = `${d.label}<span class="lock"></span>`;
-    el.addEventListener('click', () => cycleMod(d.mod));
+    el.addEventListener('click', () => { feedback(); cycleMod(d.mod); });
   }
   return el;
+}
+// La commande (caractère + modificateurs collants) est calculée à la 1re frappe de
+// l'appui puis renvoyée telle quelle par la répétition : Maj one-shot + maintien
+// de « a » donne « AAAA », pas « Aaaa ».
+function bindKey(el, build, repeat, deferred) {
+  let cmd = null;
+  const fire = (first) => { if (first || !cmd) cmd = build(); send(cmd, false); };
+  if (repeat) bindRepeat(el, fire, deferred);
+  else el.addEventListener('click', () => { flash(el); fire(true); });
 }
 function buildKeyboard(sel, rows) {
   const kb = $(sel); kb.innerHTML = '';
@@ -335,29 +377,73 @@ function buildFn() {
         cl.appendChild(el);
       }
     } else {
-      for (const d of g.keys) cl.appendChild(makeKey(d));
+      for (const d of g.keys) cl.appendChild(makeKey(d, true));   // page qui défile
     }
     grp.appendChild(cl); box.appendChild(grp);
   }
 }
+// Onglet Bios : modificateurs collants ignorés (un Ctrl armé ailleurs ne doit pas
+// s'appliquer en cachette) — les combinaisons sont explicites dans BIOS_PADS.
+function buildBios() {
+  const box = $('#bios'); box.innerHTML = '';
+  for (const p of BIOS_PADS) {
+    const pad = document.createElement('div'); pad.className = 'biospad'; pad.id = p.id;
+    pad.style.setProperty('--cols', p.cols); pad.style.setProperty('--rows', p.rows);
+    for (const d of p.keys) {
+      const el = document.createElement('div');
+      el.className = ['key', 'bioskey', d.span, d.cls].filter(Boolean).join(' ');
+      el.textContent = d.label;
+      const fire = () => send(d.cmd, !!d.reliable);
+      if (d.rep) bindRepeat(el, fire);
+      else el.addEventListener('click', () => { flash(el); fire(); });
+      pad.appendChild(el);
+    }
+    box.appendChild(pad);
+  }
+}
+// Répétition au maintien : 1 frappe, puis une toutes les REP_EVERY_MS après
+// REP_DELAY_MS. Des taps successifs (jamais down/up) : aucune touche ne peut rester
+// « collée » si un relâchement se perd. fire(true) = 1re frappe de l'appui.
+// deferred (page qui défile, Fn/Média) : rien ne part à l'appui — un appui court
+// frappe au relâchement, un maintien immobile lance la répétition, un glissement
+// (défilement de la page) annule. Sinon la 1re frappe part dès l'appui.
+const REP_DELAY_MS = 400, REP_EVERY_MS = 120;
+function bindRepeat(el, fire, deferred = false) {
+  let t = null, iv = null, pending = false, sx = 0, sy = 0;
+  const stop = () => { clearTimeout(t); clearInterval(iv); t = iv = null; pending = false; el.classList.remove('held'); };
+  const first = () => { pending = false; flash(el); fire(true); };
+  const repeat = () => { iv = setInterval(() => fire(false), REP_EVERY_MS); };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button) return;                          // bouton principal / doigt seulement
+    stop(); el.classList.add('held'); sx = e.clientX; sy = e.clientY;
+    if (deferred) { pending = true; t = setTimeout(() => { first(); repeat(); }, REP_DELAY_MS); }
+    else { e.preventDefault(); first(); t = setTimeout(repeat, REP_DELAY_MS); }
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (pending && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) stop();   // défilement
+  });
+  el.addEventListener('pointerup', () => { if (pending) first(); stop(); });
+  el.addEventListener('pointerleave', stop); el.addEventListener('pointercancel', stop);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());   // pas de menu d'appui long
+}
 
 // ===========================================================================
-//  Actions clavier (mode direct)
+//  Actions clavier (mode direct) : commande selon les modificateurs collants,
+//  les one-shot sont consommés.
 // ===========================================================================
-function onCharKey(d, el) {
+function charCmd(d) {
   let ch = d.base;
   if (mods.altgr && d.altgr) ch = d.altgr; else if (mods.shift && d.shift) ch = d.shift;
-  flash(el);
   const mask = currentMask(false);
-  send(mask ? { t:'char', v:ch, m:mask } : { t:'char', v:ch }, false);
   consumeMods();
+  return mask ? { t:'char', v:ch, m:mask } : { t:'char', v:ch };
 }
-function onNamedKey(d, el) {
-  flash(el);
-  if (d.code.startsWith('Media')) { send({ t:'key', c:d.code, a:'tap' }, false); return; }
+function namedCmd(d) {
+  if (d.code.startsWith('Media')) return { t:'key', c:d.code, a:'tap' };
   const mask = currentMask(true);
+  consumeMods();
   const cmd = { t:'key', c:d.code, a:'tap' }; if (mask) cmd.m = mask;
-  send(cmd, false); consumeMods();
+  return cmd;
 }
 
 // ===========================================================================
@@ -400,7 +486,7 @@ function initMouse() {
   // Boutons L/M/R : maintien (down/up) -> déplacement de fenêtre avec clic maintenu
   document.querySelectorAll('.mbtn[data-mb]').forEach((b) => {
     const btn = b.dataset.mb;
-    const down = (e) => { e.preventDefault(); b.classList.add('held'); send({ t:'mouse', b:btn, a:'down' }); };
+    const down = (e) => { e.preventDefault(); feedback(); b.classList.add('held'); send({ t:'mouse', b:btn, a:'down' }); };
     const rel = () => { if (!b.classList.contains('held')) return; b.classList.remove('held'); send({ t:'mouse', b:btn, a:'up' }); };
     b.addEventListener('pointerdown', down); b.addEventListener('pointerup', rel);
     b.addEventListener('pointerleave', rel); b.addEventListener('pointercancel', rel);
@@ -408,7 +494,7 @@ function initMouse() {
   // Molette (flèches) : impulsion + répétition au maintien
   document.querySelectorAll('.mbtn[data-mw]').forEach((b) => {
     const w = +b.dataset.mw; let iv = null;
-    const start = (e) => { e.preventDefault(); send({ t:'mouse', w }); iv = setInterval(() => send({ t:'mouse', w }), 140); };
+    const start = (e) => { e.preventDefault(); feedback(); send({ t:'mouse', w }); iv = setInterval(() => send({ t:'mouse', w }), 140); };
     const stop = () => { if (iv) { clearInterval(iv); iv = null; } };
     b.addEventListener('pointerdown', start); b.addEventListener('pointerup', stop);
     b.addEventListener('pointerleave', stop); b.addEventListener('pointercancel', stop);
@@ -515,7 +601,7 @@ function renderMacros() {
 let cfg = null;                       // dernière config reçue (cfg:{…})
 const ROLE_NAMES = ['standard', 'maître', 'esclave'];
 // Onglet -> flag qui le rend visible. Réglages est toujours visible.
-const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb',
+const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb', bios:'hid_kb',
                     mouse:'hid_ms', gpio:'gpio' };
 function onCfg(m) {
   if (m.saved) { toast('Enregistré — le module redémarre, reconnectez'); return; }
@@ -534,14 +620,16 @@ function setCfgLocked(locked) {
   cfgLocked = locked;
   const sec = $('#tab-cfg'); if (!sec) return;
   sec.classList.toggle('locked', locked);
-  sec.querySelectorAll('.cfgpage input, .cfgpage select, .cfgpage button')
+  // .local = préférences de cet appareil (pas du module) : jamais verrouillées.
+  sec.querySelectorAll('.cfgpage:not(.local) input, .cfgpage:not(.local) select, .cfgpage:not(.local) button')
      .forEach((el) => { el.disabled = locked; });
   updateCfgOffline();
 }
-// Bandeau « hors connexion » : visible tant que le panneau est verrouillé.
+// Bandeau « hors connexion » : visible tant que le panneau est verrouillé (sauf
+// sur une page .local, utilisable sans module).
 function updateCfgOffline() {
   const el = $('#cfgOffline'); if (!el) return;
-  el.classList.toggle('hidden', !cfgLocked);
+  el.classList.toggle('hidden', !cfgLocked || !!document.querySelector('.cfgpage.local.active'));
 }
 function applyFlags(c) {
   for (const [tab, flag] of Object.entries(TAB_FLAGS)) {
@@ -1090,7 +1178,55 @@ function toast(msg) {
   const el = $('#toast'); el.textContent = msg; el.classList.remove('hidden');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 1800);
 }
-function flash(el) { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 90); }
+// Retour visuel + retour au toucher (vibration / clic) d'une frappe.
+function flash(el) { feedback(); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 90); }
+
+// ---------------------------------------------------------------------------
+//  Retour au toucher : préférence de CET appareil (localStorage, pas la NVS).
+//  Vibration = Android/Chrome ; Safari (iPhone, transport Wi-Fi) n'a pas
+//  navigator.vibrate -> clic sonore synthétisé (Web Audio, sans fichier).
+// ---------------------------------------------------------------------------
+const FB_KEY = 's3kbd.feedback', FB_VIBRATE_MS = 15;
+const canVibrate = typeof navigator.vibrate === 'function';
+let fbMode = canVibrate ? 'vibrate' : 'click';      // vibrate | click | both | off
+try { fbMode = localStorage.getItem(FB_KEY) || fbMode; } catch (e) {}
+let audioCtx = null;
+function audioReady() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});   // déverrouillé par un geste
+  return audioCtx;
+}
+function clickSound() {
+  try {
+    const ctx = audioReady(); if (!ctx) return;
+    const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'square'; o.frequency.value = 1600;
+    g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+    o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.03);
+  } catch (e) {}
+}
+function feedback() {
+  if (canVibrate && (fbMode === 'vibrate' || fbMode === 'both')) {
+    const act = navigator.userActivation;   // Chrome refuse vibrate avant le 1er geste
+    if (!act || act.hasBeenActive) { try { navigator.vibrate(FB_VIBRATE_MS); } catch (e) {} }
+  }
+  if (fbMode === 'click' || fbMode === 'both') clickSound();
+}
+function setFeedback(mode) {
+  fbMode = mode; try { localStorage.setItem(FB_KEY, mode); } catch (e) {}
+  renderFeedback(); feedback();             // essai immédiat du mode choisi
+}
+function renderFeedback() {
+  document.querySelectorAll('[data-fb]').forEach((b) => {
+    const on = b.dataset.fb === fbMode;
+    b.classList.toggle('primary', on); b.classList.toggle('ghost', !on);
+    if (b.dataset.fb === 'vibrate' || b.dataset.fb === 'both') b.disabled = !canVibrate;
+  });
+  const h = $('#fbNoVibrate'); if (h) h.classList.toggle('hidden', canVibrate);
+}
 
 // ===========================================================================
 //  Onglets, plein écran, détection téléphone / orientation
@@ -1183,6 +1319,13 @@ function wireUI() {
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
   // Sous-onglets du panneau Réglages
   document.querySelectorAll('.subtab').forEach((s) => s.addEventListener('click', () => switchCfgSub(s.dataset.sub)));
+  // Retour au toucher (sous-onglet Appareil) + déverrouillage audio : iOS/Safari ne
+  // l'autorise que dans un vrai geste (touchend/click), pas au pointerdown.
+  document.querySelectorAll('[data-fb]').forEach((b) => b.addEventListener('click', () => setFeedback(b.dataset.fb)));
+  renderFeedback();
+  const unlockAudio = () => { if ((fbMode === 'click' || fbMode === 'both') && (!audioCtx || audioCtx.state !== 'running')) audioReady(); };
+  document.addEventListener('touchend', unlockAudio, { passive:true });
+  document.addEventListener('click', unlockAudio, true);
 
   $('#btnMacroSave').addEventListener('click', saveMacro);
 
@@ -1266,6 +1409,7 @@ function init() {
     buildKeyboard('#kb-azerty', KB_AZERTY);
     buildKeyboard('#kb-num', KB_NUM);
     buildFn();
+    buildBios();
     buildGpioModules();
     renderSteps();
     refreshMods();
@@ -1278,7 +1422,7 @@ function init() {
   try { updateEnv(); } catch (e) { logLine('err', 'updateEnv : ' + e.message); }
   try { setCfgLocked(true); } catch (e) { logLine('err', 'setCfgLocked : ' + e.message); }   // déconnecté au démarrage
 
-  logLine('in', '=== app.js v20 (repères GPIO o1.. / i1..) chargé ===');
+  logLine('in', '=== app.js v22 (répétition + retour au toucher) chargé ===');
   logLine('in', 'Page: ' + location.protocol + '//' + location.host + '  (sécurisé=' + window.isSecureContext + ')');
   selectTransport();
   logLine('in', 'prêt.');

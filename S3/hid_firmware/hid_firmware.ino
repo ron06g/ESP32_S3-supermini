@@ -356,6 +356,9 @@ static uint8_t nameToHid(const char* c) {
     {"ContextMenu",0x65},{"NumLock",0x53},
     {"F1",0x3A},{"F2",0x3B},{"F3",0x3C},{"F4",0x3D},{"F5",0x3E},{"F6",0x3F},
     {"F7",0x40},{"F8",0x41},{"F9",0x42},{"F10",0x43},{"F11",0x44},{"F12",0x45},
+    // Pave numerique : +/- independants de la disposition (un BIOS/UEFI lit en
+    // QWERTY US : le '-' AZERTY (char) y donnerait '6').
+    {"NumpadSubtract",0x56},{"NumpadAdd",0x57},
   };
   for (auto& e : T) if (strcmp(e.n, c) == 0) return e.k;
   return 0;

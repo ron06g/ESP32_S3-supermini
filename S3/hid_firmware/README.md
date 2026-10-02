@@ -229,10 +229,13 @@ Format des commandes : **JSON UTF-8** (socle §5.2). La traduction AZERTY→HID 
 
 ## Limites connues
 
-- **Protocole boot / BIOS** : la classe `USBHIDKeyboard` fournit le rapport clavier
-  standard 8 octets et fonctionne sous OS. Le fonctionnement *dès le BIOS/UEFI*
-  (recette §6.1) dépend de l'hôte ; si un firmware de carte-mère l'exige
-  strictement, il faudra un descripteur TinyUSB avec sous-classe *boot* explicite.
+- **Protocole boot / BIOS** : le clavier est construit **en premier** (`usbBegin()`),
+  donc le cœur déclare l'interface HID en sous-classe *boot* / protocole clavier et
+  retire le report ID quand l'hôte passe en mode boot (rapport 8 octets). Le
+  fonctionnement *dès le BIOS/UEFI* (recette §6.1) reste à valider selon l'hôte.
+  En mode boot, **tous** les rapports partent sans report ID : bouger la souris ou
+  envoyer une touche média pendant le BIOS peut produire des frappes parasites.
+  Un BIOS lit en QWERTY US : pour +/−, utiliser `NumpadAdd` / `NumpadSubtract`.
 - **BLE + Wi-Fi + USB** cohabitent mais sont gourmands en RAM. Le cœur esp32 3.x
   construit déjà la pile BLE sur **NimBLE** (plus légère que Bluedroid, et support
   LESC via `BLESecurity`) : c'est ce qui est utilisé ici.

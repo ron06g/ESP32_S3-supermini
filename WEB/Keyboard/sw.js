@@ -11,7 +11,7 @@
 //   - hors ligne: on sert la copie mise en cache (installation utilisable).
 //  Cohérent avec un outil de pilotage qui doit rester synchro du contrat GATT.
 // ===========================================================================
-const CACHE = 's3kbd-v18';           // ← incrémenter pour forcer un rafraîchissement
+const CACHE = 's3kbd-v20';           // ← incrémenter pour forcer un rafraîchissement
 const SHELL = [
   './',
   './index.html',
