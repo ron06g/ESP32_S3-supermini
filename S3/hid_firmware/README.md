@@ -14,9 +14,11 @@ média) et un serveur BLE recevant les commandes du site web.
 | `keymap_azerty.h` | **Table AZERTY** (caractère Unicode → touche HID + modificateurs) — pièce critique |
 | `status_led.h` | Indicateur LED RGB WS2812 (tâche dédiée) |
 | `wifi_portal.h` | **Transport Wi-Fi** : SoftAP + portail captif + serveur HTTP + WebSocket |
-| `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair, **passkey LESC**, **clé WPA2**, **nom convivial** du module + des esclaves |
+| `config.h` | **Paramètres persistants** (NVS / `Preferences`) : flags HID clavier / souris / COM / GPIO / appairage, rôle, MAC du pair, **passkey LESC**, **clé WPA2**, **nom convivial** du module + des esclaves, **fréquence CPU** et **puissances BLE / Wi-Fi** |
+| `board.h` | **Profils de carte** : détection du modèle au démarrage par les eFuses (flash intégrée = SuperMini, module WROOM = DevKit) → broche LED + GPIO exposés. Un seul binaire pour toutes les cartes |
+| `autoboot.h` | **Macro autoboot** : macro reçue en morceaux, gardée en NVS, enfilée une fois par démarrage après le montage USB + délai |
 | `com_port.h` | **Port COM** : réutilise l'unique CDC (interface 0) en mode protocole (1 ligne JSON = 1 commande, 1 STATUS = 1 ligne). Pas de 2ᵉ CDC (budget d'endpoints S3) |
-| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` (repères logiques : sorties `o1`–`o4` = GPIO 4–7, entrées `i1`–`i4` = GPIO 8–11, + `BOOT`), scrutation anti-rebond, **effets autonomes** des sorties (tâche `gpiofx` : clignotement `loop`, PWM matériel `pwm`) |
+| `gpio_panel.h` | **Panneau GPIO** : table `GPIO_TABLE[]` construite au démarrage depuis le profil de carte (repères logiques `o1`…, `i1`…, + `BOOT`), scrutation anti-rebond, **effets autonomes** des sorties (tâche `gpiofx` : clignotement `loop`, PWM matériel `pwm`) |
 | `ble_link.h` | **Appairage BLE ↔ BLE (chiffré LESC)** : scan, bind (bootstrap Just Works + provisioning sur PROV), unbind, tâche `link` (client GATT ; `secureConnection()` avant tout `writeValue`) |
 | `web_assets.h` | App `WEB/Keyboard/` embarquée (gzip, **généré** — ne pas éditer à la main) |
 | `tools/gen_web_assets.py` | Génère `web_assets.h` depuis `WEB/Keyboard/` |
@@ -52,14 +54,19 @@ code de référence fourni. Les équivalents utilisés :
 | **USB Mode** | **USB-OTG (TinyUSB)** ← indispensable pour le HID |
 | USB CDC On Boot | **Disabled** — le sketch crée lui-même la console USB (`Console`, CDC 0) et appelle `USB.begin()` **après** avoir construit les interfaces choisies en NVS. Avec *Enabled*, le cœur appelle `USB.begin()` avant `setup()` : plus aucun HID |
 | Upload Mode | UART0 / Hardware CDC |
-| Flash Size | **4 MB** — carte en main = SuperMini **N4R2** ; `FlashSize=4M`. ⚠️ `8M` fait **boucler le boot** (`spi_flash: Detected size(4096k) smaller than … header(8192k)`) |
+| Flash Size | **4 MB** — `FlashSize=4M` pour **toutes** les cartes : SuperMini (4 Mo) et DevKit N8R2 (8 Mo, qui n'en utilise que 4). ⚠️ `8M` sur une SuperMini fait **boucler le boot** (`spi_flash: Detected size(4096k) smaller than … header(8192k)`) |
 | Partition Scheme | **Huge APP (3 MB No OTA / 1 MB SPIFFS)** — requis pour loger BLE + Wi-Fi + USB + app (tient dans 4 Mo) |
-| PSRAM | **QSPI PSRAM** (N4R2, `PSRAM=enabled`) — utile pour la RAM avec le Wi-Fi |
+| PSRAM | **QSPI PSRAM** (`PSRAM=enabled`, SuperMini et N8R2) — utile pour la RAM avec le Wi-Fi. Une N16R8 (PSRAM octale) demanderait `opi` |
 
 > **SuperMini mono-USB** : le port sert de HID vers la cible ; le flash et les
 > logs passent par le **même** port (CDC/JTAG) ou par le **mode BOOT** (maintenir
 > BOOT, appuyer/relâcher RESET, relâcher BOOT, puis téléverser). Une carte
 > double-USB garde un port libre pour la console — plus confortable.
+>
+> **DevKit N8R2 (2 USB-C)** : même binaire. Prise **« USB »** (USB natif) = HID vers la
+> cible ; prise **« COM »** (pont USB-série sur UART0) = flash, reset automatique fiable.
+> `hid_firmware_flash.bat` ne détecte que le VID Espressif `303A` : passer le port du
+> pont en argument (`hid_firmware_flash.bat COM12`).
 
 ## Compiler / téléverser
 
@@ -148,13 +155,20 @@ maître/local par défaut) :
 | `{"t":"gpio","p":"o1","a":"tgl","id":1}` / `{"t":"gpio","a":"read","id":0}` | sortie/lecture des GPIO de la carte `id` (`read` sans `p` = tout ; `clr` sans `p` = tout éteindre) | `{"id":1,"ev":"gpio","p":"o1","v":1}` (aussi spontané sur entrée) |
 | `{"t":"gpio","p":"o1","a":"loop","t_set":200,"t_clr":800,"nb":5}` | clignotement **autonome** : `nb` cycles (0/absent = infini), phases 10 ms…24 h | départ `{…,"v":1,"fx":"loop"}`, fin `{…,"v":0,"fx":"loop","done":true}` |
 | `{"t":"gpio","p":"o2","a":"pwm","duty":40,"t_pwm":5000,"hz":1000}` | PWM **matériel** (LEDC) : `duty` 0–100 %, `t_pwm` ms (0/absent = infini), `hz` 10–40000 (défaut 1000) | départ `{…,"fx":"pwm","duty":40}`, fin `{…,"done":true}` |
+| `{"t":"sys","a":"get"}` / `…,"id":n}` | **modèle de carte** (profil + puce), GPIO exposés, CPU, puissances, température — **routé** par `id` | `{"id":0,"ev":"sys","b":"devkit","bn":"S3 DevKit","chip":"N8R2","cpu":160,"txb":9,"txba":1,"txw":11,"temp":41.5,"o":[…],"i":[…]}` |
+| `{"t":"sys","a":"set","cpu":160,"txw":11,"txb":"auto"}` | CPU 80/160/240 MHz, Wi-Fi 2–20 dBm, BLE −24…+18 par 3 ou 20 dBm ou `"auto"` (0 standard / +9 appairé) → NVS + **reboot** | `{"id":n,"ev":"sys","saved":true}`, sinon `err:sys` |
+| `{"t":"autoboot","a":"put","i":k,"n":N,"c":"…"[,"d":5,"name":"…"]}` | macro **autoboot** (JSON txt/seq/key/char sérialisé, en N morceaux ; `d`/`name` sur le dernier) — toujours **locale** | `{"id":0,"ev":"autoboot","put":k}` par morceau, puis `{"…","on":1,"d":5,"name":"…","len":L}` |
+| `{"t":"autoboot","a":"get|clr|run"}` | état / effacer / essayer maintenant | `{"id":0,"ev":"autoboot","on":0|1,…}` ; au départ `{"…","run":"boot"|"run"}` |
 | `{"t":"stop"}` | arrêt d'urgence **hors file** (séquence, file, touches) ; alias `{"t":"seq","n":"stop"}` | `{"id":0,"st":"ready"}` |
 | — | événements du lien (maître, par esclave) | `{"id":1,"ev":"link","up":true}`, `{"…,"up":false}`, `{"…,"rssi":-62}` (2 s) |
 
 Erreurs : `{"id":n,"err":"nolink"}` (esclave `n` injoignable), `err:id` (id inconnu),
 `err:full` (table pleine), `err:slaves` (changement de passkey refusé : esclaves
-appairés), `err:sec` (passkey/PSK invalide), `err:nohid`, `err:gpio`, `err:pair`.
-Frames STATUS ≤ **512 o**.
+appairés), `err:sec` (passkey/PSK invalide), `err:sys`, `err:autoboot`, `err:nohid`,
+`err:gpio`, `err:pair`. Frames STATUS ≤ **512 o**. En **BLE**, une frame plus longue que
+MTU − 3 (cfg d'un maître avec 3 esclaves nommés ≈ 470 o, MTU pas encore négocié…) est
+**découpée** : morceaux préfixés par l'octet `0x1F`, dernier sans préfixe — le web recolle
+les octets avant de décoder (`bleNotify`). Wi-Fi et COM ne sont pas concernés.
 
 **Désappairage physique** : **5 appuis sur BOOT** (GPIO0) en moins de 3 s (tâche
 `bootResetTask` autonome, chaque appui = impulsion LED violette) — un maître désappaire
@@ -190,11 +204,29 @@ visée (`id`) : seuls le départ et la fin produisent un STATUS.
 JSON multi-ligne accepté entre STX et ETX). Les réponses se terminent par CR LF et
 reprennent le format de la dernière commande reçue. Détail : `WEB/Landing/protocole.html`.
 
-**GPIO** : `gpio_panel.h`, table unique `GPIO_TABLE[]` — `BOOT` (GPIO0, bouton intégré),
-sorties `o1 o2 o3 o4` (GPIO 4 à 7), entrées `i1 i2 i3 i4` (GPIO 8 à 11 ; pull-up, **1 = actif = niveau bas**).
-Repères **logiques**, numérotés à partir de 1 dans chaque sens : une nouvelle broche prend le
-repère suivant de son sens (`o5`, `i5`…) dans `GPIO_TABLE` et dans `GPIO_OUT`/`GPIO_IN` (app web). Le **maître**
-scrute désormais **ses propres** GPIO (id 0) ; ceux d'un esclave s'adressent par `id`.
+**GPIO selon la carte** : `board.h` détecte le modèle au démarrage (eFuse `FLASH_CAP` :
+flash intégrée = **SuperMini** ESP32-S3FH4R2, sinon module WROOM-1 = **DevKit**) et
+`gpio_panel.h` construit `GPIO_TABLE[]` depuis son profil — `BOOT` (GPIO0, bouton intégré) +
+
+| Repères | SuperMini | DevKit (N8R2) |
+|---|---|---|
+| sorties `o1`–`o4` | GPIO 4, 5, 6, 7 | GPIO 4, 5, 6, 7 |
+| sorties `o5`–`o8` | — | GPIO 15, 16, 17, 18 |
+| entrées `i1`–`i4` | GPIO 8, 9, 10, 11 | GPIO 8, 9, 10, 11 |
+| entrées `i5`–`i8` | — | GPIO 12, 13, 14, 21 |
+
+Entrées en pull-up, **1 = actif = niveau bas**. Repères **logiques** ; `o1`–`o4`/`i1`–`i4`
+identiques partout. Nouvelle broche / nouvelle carte : la liste `out[]`/`in[]` du profil
+(`board.h`) ; le web lit les broches de chaque carte via `sys` (rien à recopier, sauf le
+repli `HW_DEFAULT` d'app.js pour un ancien firmware). On identifie la **puce**, pas le circuit
+imprimé (une autre carte WROOM avec la LED ailleurs aurait le même profil). Le **maître**
+scrute **ses propres** GPIO (id 0) ; ceux d'un esclave s'adressent par `id`.
+
+**Autoboot** : la macro (≤ 2 Ko) est rangée en NVS (`abm`/`abd`/`abn`) ; au démarrage, une
+tâche attend que la machine cible ait **monté** le clavier USB, puis le délai `d` (repris si
+la cible se débranche), et enfile la macro **une fois** — même file que les commandes reçues
+(STOP l'interrompt, le worker reste seul sur l'USB). Jamais sur un esclave ni sans clavier HID.
+Effacée par le reset d'usine.
 
 ## Tester le lot seul (sans le site web)
 

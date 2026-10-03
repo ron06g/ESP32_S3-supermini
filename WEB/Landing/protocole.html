@@ -207,6 +207,8 @@
       <li class="sub"><a href="#c-sec">sec</a></li>
       <li class="sub"><a href="#c-name">name</a></li>
       <li class="sub"><a href="#c-pair">pair</a></li>
+      <li class="sub"><a href="#c-sys">sys</a></li>
+      <li class="sub"><a href="#c-autoboot">autoboot</a></li>
       <li><a href="#erreurs">Codes d'erreur</a></li>
       <li><a href="#evenements">Événements spontanés</a></li>
       <li><a href="#file">File, cadence et STOP</a></li>
@@ -545,7 +547,8 @@
     <thead><tr><th>Champ</th><th>Type</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>p</code></td><td><b>chaîne</b></td><td>Repère de la broche&nbsp;: <code>"o1"</code> à <code>"o4"</code> (sorties),
-        <code>"i1"</code> à <code>"i4"</code> (entrées), <code>"BOOT"</code> (bouton intégré, entrée). Majuscules acceptées
+        <code>"i1"</code> à <code>"i4"</code> (entrées) sur une SuperMini, jusqu'à <code>"o8"</code> / <code>"i8"</code> sur une
+        DevKit (voir <a href="#gpio-reperes">repères</a>), <code>"BOOT"</code> (bouton intégré, entrée). Majuscules acceptées
         (<code>"O1"</code>)&nbsp;; les réponses utilisent toujours la forme en minuscules. Absent&nbsp;: toutes les broches (<code>read</code> ou <code>clr</code> seulement).</td></tr>
       <tr><td><code>a</code></td><td>chaîne</td><td><code>read</code> (défaut), <code>set</code> (niveau haut), <code>clr</code> (niveau bas),
         <code>tgl</code> (inverser), <code>loop</code> (clignotement autonome), <code>pwm</code> (PWM autonome). Écriture sur les sorties uniquement.</td></tr>
@@ -553,7 +556,7 @@
   </table></div>
   <div class="code"><pre class="json">→ {"t":"gpio","p":"o1","a":"set"}
 ← {"id":0,"ev":"gpio","p":"o1","v":1}
-→ {"t":"gpio","a":"read"}                     <span class="j-c">// 9 réponses, une par broche</span>
+→ {"t":"gpio","a":"read"}                     <span class="j-c">// une réponse par broche : 9 (SuperMini), 17 (DevKit)</span>
 ← {"id":0,"ev":"gpio","p":"BOOT","v":0}
 ← {"id":0,"ev":"gpio","p":"o1","v":1}
 <span class="j-c">  …</span>
@@ -571,14 +574,18 @@
 
   <h3 id="gpio-reperes">Repères et broches physiques <small>pour le câblage</small></h3>
   <p>Les repères sont <b>logiques</b>&nbsp;: numérotés à partir de 1 dans chaque sens, indépendamment du numéro de GPIO de la puce.
-    Une broche ajoutée par une future version prend simplement le repère suivant de son sens (<code>o5</code>, <code>i5</code>…)&nbsp;: les
-    repères existants ne changent jamais.</p>
+    Le firmware est le même pour toutes les cartes&nbsp;: au démarrage, il <b>reconnaît le modèle</b> à partir de la puce (flash intégrée
+    ou module WROOM) et expose les broches de ce modèle. <code>o1</code>–<code>o4</code> et <code>i1</code>–<code>i4</code> sont sur les
+    <b>mêmes GPIO</b> partout&nbsp;: un programme écrit pour une SuperMini fonctionne sur une DevKit. La liste exacte d'une carte se lit
+    avec <a href="#c-sys"><code>sys</code></a> (champs <code>o</code> et <code>i</code>).</p>
   <div class="tblwrap"><table class="tbl">
-    <thead><tr><th>Repère</th><th>Sens</th><th>GPIO (S3 SuperMini)</th><th>Niveau «&nbsp;1&nbsp;»</th></tr></thead>
+    <thead><tr><th>Repère</th><th>Sens</th><th>GPIO S3 SuperMini</th><th>GPIO S3 DevKit (WROOM-1 N8R2)</th><th>Niveau «&nbsp;1&nbsp;»</th></tr></thead>
     <tbody>
-      <tr><td><code>o1</code> <code>o2</code> <code>o3</code> <code>o4</code></td><td>Sorties</td><td>4 · 5 · 6 · 7</td><td>3,3&nbsp;V</td></tr>
-      <tr><td><code>i1</code> <code>i2</code> <code>i3</code> <code>i4</code></td><td>Entrées</td><td>8 · 9 · 10 · 11</td><td>Contact fermé vers la masse</td></tr>
-      <tr><td><code>BOOT</code></td><td>Entrée</td><td>0 (bouton intégré)</td><td>Bouton pressé</td></tr>
+      <tr><td><code>o1</code> <code>o2</code> <code>o3</code> <code>o4</code></td><td>Sorties</td><td>4 · 5 · 6 · 7</td><td>4 · 5 · 6 · 7</td><td>3,3&nbsp;V</td></tr>
+      <tr><td><code>o5</code> <code>o6</code> <code>o7</code> <code>o8</code></td><td>Sorties</td><td>—</td><td>15 · 16 · 17 · 18</td><td>3,3&nbsp;V</td></tr>
+      <tr><td><code>i1</code> <code>i2</code> <code>i3</code> <code>i4</code></td><td>Entrées</td><td>8 · 9 · 10 · 11</td><td>8 · 9 · 10 · 11</td><td>Contact fermé vers la masse</td></tr>
+      <tr><td><code>i5</code> <code>i6</code> <code>i7</code> <code>i8</code></td><td>Entrées</td><td>—</td><td>12 · 13 · 14 · 21</td><td>Contact fermé vers la masse</td></tr>
+      <tr><td><code>BOOT</code></td><td>Entrée</td><td>0 (bouton intégré)</td><td>0 (bouton intégré)</td><td>Bouton pressé</td></tr>
     </tbody>
   </table></div>
 
@@ -608,8 +615,9 @@
     <li><b>Une nouvelle commande interrompt la commande en cours</b>&nbsp;: <code>set</code>, <code>clr</code>, <code>tgl</code>,
       <code>loop</code> ou <code>pwm</code> sur une sortie arrête son effet et applique la nouvelle consigne. <code>read</code> n'interrompt rien
       (sa réponse porte <code>fx</code> si un effet tourne). Une commande refusée (<code>err:gpio</code>) laisse l'effet en place.</li>
-    <li><b>Chaque sortie a son propre effet</b>&nbsp;: les quatre sorties peuvent clignoter ou moduler en même temps, à des rythmes
-      différents, sur chaque module de l'étoile.</li>
+    <li><b>Chaque sortie a son propre effet</b>&nbsp;: toutes les sorties peuvent clignoter ou moduler en même temps, à des rythmes
+      différents, sur chaque module de l'étoile. Le PWM matériel accepte au plus 4 fréquences différentes à la fois par carte
+      (au-delà&nbsp;: <code>err:gpio</code>).</li>
     <li><b>Fin</b>&nbsp;: quand <code>nb</code> cycles ou <code>t_pwm</code> sont écoulés, la sortie revient à <code>0</code> et la réponse porte
       <code>"done":true</code>. Un effet interrompu ne produit pas de <code>done</code>&nbsp;: la réponse de la nouvelle commande en tient lieu.</li>
     <li><b>Charge</b>&nbsp;: une seule tâche gère toutes les sorties et dort jusqu'à la prochaine échéance — deux réveils par cycle de
@@ -686,6 +694,59 @@
     </tbody>
   </table></div>
   <p class="muted">L'action <code>slave</code> est interne&nbsp;: le maître l'envoie à un module vierge pendant <code>bind</code>. Ne l'utilisez pas.</p>
+
+  <!-- ---- sys ---- -->
+  <h3 id="c-sys"><code>sys</code> <small>modèle de carte, puissances radio, processeur</small></h3>
+  <p>Routée par <code>id</code> comme <code>gpio</code>&nbsp;: chaque carte répond pour elle-même.</p>
+  <div class="code"><pre class="json">→ {"t":"sys","a":"get"}
+← {"id":0,"ev":"sys","b":"devkit","bn":"S3 DevKit","chip":"N8R2","cpu":160,"txb":9,"txba":1,"txw":11,
+   "temp":41.5,"o":[4,5,6,7,15,16,17,18],"i":[8,9,10,11,12,13,14,21]}
+→ {"t":"sys","a":"get","id":1}                <span class="j-c">// modèle de l'esclave 1</span>
+← {"id":1,"ev":"sys","b":"supermini","bn":"S3 SuperMini","chip":"F4R2",…,"o":[4,5,6,7],"i":[8,9,10,11]}</pre></div>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Champ</th><th>Signification</th></tr></thead>
+    <tbody>
+      <tr><td><code>b</code>, <code>bn</code></td><td>Modèle reconnu au démarrage&nbsp;: <code>supermini</code> (flash intégrée à la puce) ou <code>devkit</code>
+        (module WROOM-1). On identifie la puce, pas le circuit imprimé.</td></tr>
+      <tr><td><code>chip</code></td><td><code>F</code> = flash intégrée, <code>N</code> = flash externe, puis sa taille réelle en Mo, puis <code>R</code> + PSRAM en Mo.</td></tr>
+      <tr><td><code>o</code>, <code>i</code></td><td>GPIO physiques de <code>o1</code>, <code>o2</code>… et de <code>i1</code>, <code>i2</code>… (<code>BOOT</code> = GPIO 0 en plus).</td></tr>
+      <tr><td><code>cpu</code></td><td>Fréquence du processeur (MHz).</td></tr>
+      <tr><td><code>txb</code>, <code>txba</code></td><td>Puissance Bluetooth effective (dBm)&nbsp;; <code>txba</code> = <code>1</code> si elle est automatique
+        (0&nbsp;dBm en standard, +9&nbsp;dBm appairé).</td></tr>
+      <tr><td><code>txw</code></td><td>Puissance du point d'accès Wi-Fi (dBm).</td></tr>
+      <tr><td><code>temp</code></td><td>Température de la puce (°C), capteur interne.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"sys","a":"set","cpu":80,"txw":8,"txb":"auto"}
+← {"id":0,"ev":"sys","saved":true}             <span class="j-c">// puis redémarrage</span></pre></div>
+  <p><code>set</code> accepte <code>cpu</code> (<code>80</code>, <code>160</code> ou <code>240</code>), <code>txw</code> (<code>2</code> à <code>20</code>) et
+    <code>txb</code> (<code>-24</code> à <code>18</code> par pas de 3, <code>20</code>, ou <code>"auto"</code>)&nbsp;; ceux qui manquent sont conservés.
+    Une valeur invalide est refusée (<code>err:sys</code>) sans rien modifier. Le module enregistre puis <a href="#redemarrages">redémarre</a>.</p>
+
+  <!-- ---- autoboot ---- -->
+  <h3 id="c-autoboot"><code>autoboot</code> <small>macro tapée au démarrage</small></h3>
+  <p>Toujours exécutée sur le module qui la reçoit. Une macro (commande <code>txt</code>, <code>seq</code>, <code>key</code> ou <code>char</code>)
+    est enregistrée dans le module&nbsp;; à chaque démarrage, il la tape seul, <code>d</code> secondes après que la machine a reconnu
+    le clavier USB. Jamais sur un esclave ni sans clavier HID. <a href="#stop"><code>stop</code></a> l'interrompt.</p>
+  <div class="tblwrap"><table class="tbl">
+    <thead><tr><th>Action</th><th>Syntaxe</th><th>Réponse</th></tr></thead>
+    <tbody>
+      <tr><td><code>get</code></td><td><code>{"t":"autoboot","a":"get"}</code></td><td><code>{"id":0,"ev":"autoboot","on":1,"d":5,"name":"Login","len":58}</code>
+        (<code>on:0</code> si aucune).</td></tr>
+      <tr><td><code>put</code></td><td><code>{"t":"autoboot","a":"put","i":0,"n":1,"c":"…","d":5,"name":"Login"}</code></td>
+        <td><code>c</code> = la macro JSON <b>sérialisée en chaîne</b>, en <code>n</code> morceaux (<code>i</code> = 0…n-1, dans l'ordre)&nbsp;;
+        chaque morceau non final est acquitté par <code>{"id":0,"ev":"autoboot","put":i}</code>. Le dernier porte <code>d</code>
+        (0 à 600 s, défaut 5) et <code>name</code>&nbsp;; le module valide, enregistre et répond par la ligne d'état. 2 Ko au plus.</td></tr>
+      <tr><td><code>clr</code></td><td><code>{"t":"autoboot","a":"clr"}</code></td><td>Efface la macro (<code>on:0</code>).</td></tr>
+      <tr><td><code>run</code></td><td><code>{"t":"autoboot","a":"run"}</code></td><td>L'exécute tout de suite (essai).</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><pre class="json">→ {"t":"autoboot","a":"put","i":0,"n":1,"c":"{\"t\":\"txt\",\"v\":\"bonjour\\n\"}","d":3,"name":"Salut"}
+← {"id":0,"ev":"autoboot","on":1,"d":3,"name":"Salut","len":27}
+<span class="j-c">  … au démarrage suivant, 3 s après la reconnaissance USB :</span>
+← {"id":0,"ev":"autoboot","run":"boot","name":"Salut"}</pre></div>
+  <p>Un morceau hors séquence, une macro invalide ou trop longue abandonnent l'envoi (<code>err:autoboot</code>)&nbsp;: recommencez à
+    <code>i:0</code>. Le reset d'usine efface la macro.</p>
 </section>
 
 <!-- ============================================================ -->
@@ -714,6 +775,9 @@
       <tr><td><code>full</code></td><td>Maître&nbsp;: déjà 3 esclaves.</td></tr>
       <tr><td><code>slaves</code></td><td>Changement de passkey refusé&nbsp;: désappairez d'abord les esclaves.</td></tr>
       <tr><td><code>sec</code></td><td>Passkey ou clé Wi-Fi invalide.</td></tr>
+      <tr><td><code>sys</code></td><td>Fréquence ou puissance hors des valeurs admises.</td></tr>
+      <tr><td><code>autoboot</code></td><td>Morceau hors séquence, macro invalide (autre que <code>txt</code>/<code>seq</code>/<code>key</code>/<code>char</code>),
+        trop longue, délai hors limites, ou aucune macro à lancer (<code>run</code>).</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -733,6 +797,8 @@
       <tr><td>Activité</td><td><code>{"id":0,"st":"busy"}</code></td><td>Commandes reçues par un autre canal (Bluetooth, Wi-Fi).</td></tr>
       <tr><td>Désappairage</td><td><code>{"id":0,"ev":"pair","ok":true}</code></td><td>5 appuis sur BOOT, avant redémarrage.</td></tr>
       <tr><td>Reset d'usine</td><td><code>{"id":0,"ev":"sys","factory":true}</code></td><td>BOOT maintenu 20 s, avant redémarrage.</td></tr>
+      <tr><td>Autoboot</td><td><code>{"id":0,"ev":"autoboot","run":"boot","name":"Login"}</code></td><td>La macro de démarrage part
+        (délai écoulé après la reconnaissance USB).</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -766,7 +832,7 @@
   <h2>Redémarrages</h2>
   <p>Ces commandes enregistrent un réglage puis redémarrent le module&nbsp;:</p>
   <ul class="list">
-    <li><code>cfg</code> <code>set</code>&nbsp;;</li>
+    <li><code>cfg</code> <code>set</code> et <code>sys</code> <code>set</code>&nbsp;;</li>
     <li><code>sec</code> <code>passkey</code> et <code>sec</code> <code>wifi</code>&nbsp;;</li>
     <li><code>name</code> sur ce module (standard ou maître)&nbsp;;</li>
     <li><code>pair</code> <code>bind</code>, <code>unbind</code>, <code>reset</code>&nbsp;;</li>
@@ -784,7 +850,8 @@
     les 3 restent disponibles pour les esclaves. C'est la configuration conseillée pour un hôte fixe (PC, Raspberry Pi).</p>
   <ul class="list">
     <li>Ajoutez <code>"id":1</code> à <code>3</code> pour viser un esclave&nbsp;; sans <code>id</code>, la commande s'exécute sur le maître.</li>
-    <li><code>cfg</code>, <code>pair</code>, <code>sec</code> et <code>name</code> sont toujours traitées par le maître.</li>
+    <li><code>cfg</code>, <code>pair</code>, <code>sec</code>, <code>name</code> et <code>autoboot</code> sont toujours traitées par le maître.
+      <code>sys</code> est routée&nbsp;: <code>{"t":"sys","a":"get","id":2}</code> donne le modèle et les broches de l'esclave 2.</li>
     <li>Les réponses d'un esclave sont relayées telles quelles, avec son id&nbsp;: <code>{"id":2,"ev":"gpio","p":"i1","v":1}</code>.</li>
     <li>Esclave injoignable&nbsp;: <code>{"id":2,"err":"nolink"}</code>, et un événement <code>link</code> signale son retour.</li>
     <li>Un esclave est destiné aux entrées/sorties. Son propre port COM (s'il est activé) le pilote localement&nbsp;;

@@ -41,6 +41,11 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default
 arduino-cli upload  --fqbn esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,FlashSize=4M,PartitionScheme=huge_app,PSRAM=enabled -p COM7 S3/hid_firmware
 ```
 
+- **Un seul binaire pour toutes les cartes** : SuperMini (ESP32-S3FH4R2, 4 Mo) et DevKit
+  WROOM-1 **N8R2** (8 Mo, 2 USB-C) avec le même FQBN (`FlashSize=4M` démarre sur 8 Mo ;
+  l'inverse boucle). Le modèle est reconnu au boot (`board.h`). N8R2 : prise « USB » = HID,
+  prise « COM » (pont USB-série, VID non Espressif) = flash → passer le port à
+  `hid_firmware_flash.bat COMx`.
 - Prérequis : cœur **esp32 ≥ 2.0.14**, bibliothèque **ArduinoJson v7**,
   bibliothèque **WebSockets** (Markus Sattler / Links2004) pour le transport Wi-Fi.
 - Via l'IDE : Board « ESP32S3 Dev Module », **USB Mode = USB-OTG (TinyUSB)**,
@@ -122,8 +127,13 @@ un module qui se renomme **redémarre** — le nom est aussi l'annonce BLE fixé
 boot ; routé par `id` vers un esclave, celui-ci **ne redémarre pas**, garde le lien), `gpio`
 (`p` label, `a`=`set`/`clr`/`tgl`/`read`, **effets autonomes** `loop` (`t_set`/`t_clr` ms,
 `nb` cycles, 0 = infini) et `pwm` (`duty` %, `t_pwm` ms, `hz`) ; `{"t":"gpio","a":"clr"}`
-sans `p` = tout éteindre ; toute écriture sur une sortie interrompt son effet). Masque
-modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
+sans `p` = tout éteindre ; toute écriture sur une sortie interrompt son effet), `sys`
+(`a`=`get`/`set` : **modèle de carte** `b`/`bn`/`chip`, GPIO exposés `o[]`/`i[]`, `cpu`
+80/160/240, puissances `txb` (BLE dBm, `"auto"` = 0 standard / +9 appairé) et `txw` (Wi-Fi
+2–20 dBm), `temp` ; **routé par `id`**, `set` redémarre), `autoboot` (`a`=`get`/`put`/`clr`/
+`run` : macro txt/seq/key/char gardée en NVS, envoyée en morceaux `i`/`n`/`c` — `d` délai et
+`name` sur le dernier —, tapée une fois par démarrage `d` s après le montage USB ; toujours
+**locale**). Masque modificateurs `m` : bit0=Ctrl, 1=Shift, 2=Alt, 3=GUI, 4=AltGr.
 
 **Sécurité (phase LESC).** Les liaisons BLE sont chiffrées en **LE Secure
 Connections** avec une **passkey statique** (défaut `000000`, redéfinissable via
@@ -152,7 +162,10 @@ verbatim**). Discriminants : `{"id":n,"st":"ready|busy"}` (état ; seul l'id 0 e
 l'« état courant »), `{"id":n,"err":"<code>"}`, ou événements
 `{"id":n,"ev":"cfg|scan|pair|link|gpio|pong",…}` — ex. `{"id":1,"ev":"gpio","p":"o1","v":1}`,
 `{"id":2,"ev":"link","up":true}`. Frames jusqu'à **512 octets** (`STATUS_MAX`, le
-`cfg` embarque la table `slaves[]` + les noms). Côté firmware, `notifyStatus()` est un
+`cfg` embarque la table `slaves[]` + les noms : ~470 o au pire). **En BLE, une frame > MTU−3
+est découpée** (`bleNotify`, verrou `g_notifyMux`) : morceaux préfixés par l'octet `0x1F`,
+dernier sans préfixe ; le web recolle les **octets** avant de décoder (`onStatus`). Jamais sur
+un esclave (lien maître, MTU 517). Côté firmware, `notifyStatus()` est un
 **adaptateur** qui convertit encore les chaînes legacy (`ready`/`err:*`/`gpio:*`…)
 en JSON `{"id":g_myId,…}` et laisse passer une frame déjà JSON (`statusRaw`).
 
@@ -218,7 +231,8 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
   (1 interface HID) + **un** CDC ; le port COM réutilise donc la console. Changer un flag
   USB = sauvegarde NVS + redémarrage ; le numéro de série USB dérive des flags (cache
   descripteur Windows).
-- **`cfg`, `pair` et `sec` sont toujours locaux** ; `name` aussi est traité localement
+- **`cfg`, `pair`, `sec` et `autoboot` sont toujours locaux** (`sys`, lui, est routé : chaque
+  carte répond pour elle-même) ; `name` aussi est traité localement
   (il gère lui-même son routage maître→esclave pour mettre à jour la table du maître).
   Pour les autres `t`, sur un maître une commande `id≠0` est routée vers l'esclave
   (`id=0`/absent = exécution locale). Le maître **relaie verbatim** les STATUS des
@@ -243,25 +257,35 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
 - `hid_firmware.ino` : orchestration (USB HID composite clavier+consumer+souris,
   serveur BLE Bluedroid, parseur ArduinoJson, dispatch, séquenceur, file/worker).
 - `keymap_azerty.h` : table Unicode → frappe(s) HID (voir invariant ci-dessus).
+- `board.h` : **profils de carte**. `boardDetect()` (début de `setup()`, avant `ledBegin`) lit
+  l'eFuse `FLASH_CAP` : flash intégrée → `supermini`, sinon module WROOM → `devkit` ;
+  `g_chip` = tailles réelles (`F4R2`, `N8R2`). Le profil donne la LED et les listes `out[]`/
+  `in[]` (o1–o4/i1–i4 identiques partout ; DevKit o5–o8 = 15–18, i5–i8 = 12, 13, 14, 21).
+  On identifie la puce, pas le PCB. Nouvelle carte = un profil + sa règle de détection.
+- `autoboot.h` : macro de démarrage (NVS `abm`/`abd`/`abn`, ≤ 2 Ko), assemblée par morceaux
+  dans le worker ; tâche `autoboot` à usage unique : attend `USB` monté + délai, puis
+  `enqueueTrusted()` (même file, sans le garde-fou `CMD_MAX_BYTES`). Pas sur un esclave.
 - `config.h` : paramètres NVS (`cfg_t g_cfg` : flags, rôle, `selfId` de l'esclave,
   MAC du maître `peer[]`, table de routage `slaves[MAX_SLAVES]` (id↔MAC + `name`) +
   helpers de slot ; **`passkey`** LESC, **`apPsk`** clé WPA2, **`name`** nom convivial
-  du module (`NAME_MAX`=20) ; helpers `secPasskeyValid`/`secWifiPskValid`/`slaveSetName`).
+  du module (`NAME_MAX`=20), **`cpuMhz`/`txWifi`/`txBle`** (`TXB_AUTO` = clé absente =
+  défaut du rôle, `bleTxDbm()`) ; helpers `secPasskeyValid`/`secWifiPskValid`/`slaveSetName`,
+  `sysCpuValid`/`sysTxwValid`/`sysTxbValid`).
   Ajouter un champ à `slave_nv_t` change `sizeof(slaves)` → l'ancien blob NVS est ignoré
   au 1er boot (table vidée) : un re-flash impose de ré-appairer (acceptable).
 - `com_port.h` : port COM = CDC unique en mode protocole (tâche `com`), pas de 2ᵉ CDC ;
   tramage ligne (CR/LF/CRLF) ou `STX…ETX` (resynchronisation, JSON multi-ligne).
-- `gpio_panel.h` : table `GPIO_TABLE[]` = repère LOGIQUE -> GPIO physique : sorties
-  `o1`…`o4` (GPIO 4–7), entrées `i1`…`i4` (GPIO 8–11), numérotées à partir de 1 dans
-  chaque sens, + `BOOT` (bouton intégré, GPIO 0). Nouvelle broche = une ligne avec le
-  repère suivant de son sens (o5, i5…), recopiée dans `GPIO_OUT`/`GPIO_IN` (app.js) ; scrutation anti-rebond, `gpioHandle()`, effets
+- `gpio_panel.h` : table `GPIO_TABLE[]` = repère LOGIQUE -> GPIO physique, **construite au
+  boot** (`gpioBuildTable`) depuis le profil `g_board` : `BOOT` (GPIO 0), sorties `o1`…,
+  entrées `i1`… (tableaux dimensionnés `GPIO_MAX`). Le web lit les broches via `sys` (repli
+  `HW_DEFAULT` d'app.js = SuperMini pour un ancien firmware) ; scrutation anti-rebond, `gpioHandle()`, effets
   autonomes des sorties (`g_fx[]`, tâche `gpiofx`, `loop` logiciel + `pwm` LEDC).
   Description complète du protocole : `WEB/Landing/protocole.html`.
 - `ble_link.h` : étoile multi-esclaves. scan / bind (id auto) / unbind (par id ou
   tous) exécutés dans le worker + une tâche `linkN` par esclave (reconnexion,
   écriture, RSSI, événements `link`) + tâche `relay` (rediffuse les STATUS des
   esclaves via la file partagée `g_relayQueue`). Runtime `g_link[MAX_SLAVES]`.
-- `status_led.h` : indicateur LED RGB WS2812 (GPIO48) dans une tâche dédiée à
+- `status_led.h` : indicateur LED RGB WS2812 (`g_ledPin`, fixé par le profil, GPIO48) dans une tâche dédiée à
   ~50 Hz. Modes esclave : `LST_SLAVE_WAIT` (ambre), `LST_SLAVE_LINKED` (vert),
   l'intensité verte suivant le RSSI (`ledSetRssi`, -90…-40 dBm ; via
   `ble_gap_conn_rssi` dans `loop()`). Sur un **maître** multi-esclaves, la LED
@@ -272,8 +296,16 @@ Le HID n'est **créé** en USB que si `hid_kb`/`hid_ms` (interfaces conditionnel
 ### Web — fichiers (`WEB/Keyboard/`)
 
 Client Web Bluetooth pensé **smartphone Android en paysage**. `app.js` définit les
-onglets (AZERTY, Num, Fn/Média, Bios, Souris, Texte, Macro, Séq., GPIO ; le panneau
-Réglages s'ouvre par l'icône ⚙️ de l'en-tête et héberge le bouton Journal). L'onglet
+onglets (Souris — avec la saisie Texte ⌨️ —, AZERTY, Num, Fn/Média — avec l'éditeur de
+séquence —, Bios, **Macros**, GPIO ; le panneau Réglages s'ouvre par l'icône ⚙️ de l'en-tête).
+**Macros** : bibliothèque `{name, cmd}` en `localStorage` (`s3kbd.macros`), alimentée par 💾
+(texte) et « 💾 Mémoriser » (séquence) ; export/import d'un fichier JSON ; **autoboot**
+programmé dans le module (`uploadAutoboot` : morceaux ≤ 300 o acquittés un par un). Un long
+texte lancé directement est découpé (`splitUtf8`). **Synchro à la connexion** (`syncModule`) :
+`cfg get` ré-essayé (6 fois, délai croissant, `rearm()` des notifications BLE au 3ᵉ), puis
+`sys` et `autoboot` ; `request()`/`waitEv()` attendent l'événement réponse (`err:type` d'un
+ancien firmware = repli immédiat) ; bandeau Réglages : hors connexion / lecture n/6 / échec +
+Réessayer. **Sécurité** : curseurs puissance BLE / Wi-Fi + section CPU (`sys set`, redémarre). L'onglet
 **Bios** (`BIOS_PADS`, `buildBios()`) range de grosses touches en pavés (grille CSS) pour
 piloter le démarrage (BIOS/UEFI, boot, GRUB) ; +/− = `NumpadAdd`/`NumpadSubtract` car un
 BIOS lit en QWERTY US ; il ignore les modificateurs collants. **Répétition au maintien**
@@ -310,8 +342,9 @@ esclave, tout sur un écran) ; chaque élément porte `data-gid`+`data-gpio`, le
 route via `send(…, id)` et `onGpio()` cible `[data-gid][data-gpio]`. Sur une sortie,
 clic = `tgl`, **appui long** (`bindLongPress`, 450 ms, ou clic droit) = popup `#gpioFx`
 (`openGpioFx`) : `loop` ou `pwm` en **durée infinie** (ni `nb` ni `t_pwm`), « Arrêter » = `clr`. « Relire tout »
-lit toutes les cartes. Les libellés GPIO (`GPIO_OUT`/`GPIO_IN`) doivent rester
-alignés sur `gpio_panel.h`. `WEB/index.html` redirige vers `Keyboard/`.
+lit toutes les cartes. Les broches de chaque section viennent du **modèle** de la carte
+(`hwInfo`, frame `sys` ; en-tête = nom + modèle, GPIO physique sous chaque repère) — l'état
+affiché est conservé quand la section est reconstruite. `WEB/index.html` redirige vers `Keyboard/`.
 
 ## Références
 

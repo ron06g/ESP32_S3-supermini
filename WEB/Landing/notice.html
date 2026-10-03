@@ -300,7 +300,7 @@
         </g>
 
         <!-- GPIO badge -->
-        <g class="node hot" id="gpio-auto" data-tip-title="GPIO locaux" data-tip="Sorties o1-o4 et entrées BOOT, i1-i4. Pilotables par le contrôleur (commande gpio) ; les changements d'entrée remontent en STATUS. N'atteint jamais la machine cible.">
+        <g class="node hot" id="gpio-auto" data-tip-title="GPIO locaux" data-tip="Sorties o1… et entrées BOOT, i1… selon la carte (SuperMini : 4 + 4, DevKit : 8 + 8). Pilotables par le contrôleur (commande gpio) ; les changements d'entrée remontent en STATUS. N'atteint jamais la machine cible.">
           <rect x="415" y="222" width="150" height="34" rx="9" fill="#1b2230"/>
           <text class="pin" x="490" y="244" text-anchor="middle" fill="#d2a8ff">🔌 GPIO locaux</text>
         </g>
@@ -443,7 +443,7 @@
       <tr><td>HID clavier</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Clavier + touches média USB ; onglets AZERTY, Num, Fn/Média, Bios.</td></tr>
       <tr><td>HID souris</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Souris USB ; onglet Souris.</td></tr>
       <tr><td>Port COM</td><td class="v"><span class="state no">✗ désactivé</span></td><td class="why">Aucun port série exposé : un module neuf n'apparaît que comme clavier/souris.</td></tr>
-      <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO (sorties o1-o4, entrées BOOT et i1-i4).</td></tr>
+      <tr><td>GPIO</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Onglet GPIO : sorties o1-o4 et entrées BOOT, i1-i4 sur une SuperMini ; o1-o8 et i1-i8 sur une DevKit N8R2.</td></tr>
       <tr><td>Appairage</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Scan et appairage BLE ↔ BLE en étoile.</td></tr>
       <tr><td>BLE (contrôleur)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Le module s'annonce : un téléphone / PC peut s'y connecter.</td></tr>
       <tr><td>Wi-Fi (SoftAP)</td><td class="v"><span class="state yes">✓ actif</span></td><td class="why">Point d'accès + portail captif + app embarquée.</td></tr>
@@ -456,6 +456,11 @@
       <tr><td>Réseau Wi-Fi</td><td class="v"><code>S3-KBD</code></td><td class="why">Le SSID suit le nom convivial. Un seul client Wi-Fi à la fois.</td></tr>
       <tr><td>Clé Wi-Fi</td><td class="v"><code>12345678</code></td><td class="why">WPA2, 8 à 63 caractères. À personnaliser dès la mise en service.</td></tr>
       <tr><td>Adresse</td><td class="v"><code>192.168.4.1</code></td><td class="why">App servie en HTTP ; commandes sur le WebSocket <code>ws://192.168.4.1:81/</code>.</td></tr>
+      <tr class="grp"><td colspan="3">Radio et processeur (Réglages → Sécurité)</td></tr>
+      <tr><td>Puissance BLE</td><td class="v">auto</td><td class="why">0 dBm en standard (téléphone dans la pièce), +9 dBm appairé (liens maître ↔ esclaves). Réglable de −24 à +20 dBm.</td></tr>
+      <tr><td>Puissance Wi-Fi</td><td class="v">11 dBm</td><td class="why">Point d'accès à quelques mètres. Réglable de 2 à 20 dBm ; c'est la principale source de chaleur.</td></tr>
+      <tr><td>Processeur</td><td class="v">160 MHz</td><td class="why">80 MHz (le plus sobre), 160 MHz ou 240 MHz (maximum).</td></tr>
+      <tr><td>Autoboot</td><td class="v"><span class="state no">✗ aucun</span></td><td class="why">Aucune macro n'est tapée au démarrage tant qu'on n'en programme pas une (onglet Macros).</td></tr>
     </tbody>
   </table>
   </div>
@@ -563,13 +568,21 @@
       Pg↑ / Pg↓, Début / Fin, <b>+ / −</b>, Échap, Espace, ⌫ ; Tab, Maj+F10, Y / N, e / c / Ctrl+X (GRUB), Pause.
       Flèches, Pg, + / − et ⌫ se répètent au maintien. Le + / − passe par le pavé numérique&nbsp;: un BIOS lit le clavier
       en QWERTY, où le «&nbsp;−&nbsp;» AZERTY donnerait «&nbsp;6&nbsp;». Les modificateurs collants n'y sont pas appliqués.</p></div>
-    <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran : sorties
-      <b>o1–o4</b> en bascule, entrées <b>i1–i4</b> en voyants (pull-up, actif bas), bouton BOOT.
-      Le GPIO physique de chaque repère s'affiche au survol. « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
+    <div class="app"><h4>💾 Macros</h4><p>Vos textes (💾 de la saisie clavier) et séquences (« 💾 Mémoriser » sous l'éditeur)
+      rangés dans une liste : lancer, rouvrir une séquence dans l'éditeur, renommer, supprimer. Ils sont gardés par le navigateur ;
+      <b>Enregistrer dans un fichier</b> / <b>Charger un fichier</b> (JSON) pour les sauvegarder ou les passer à un autre téléphone.
+      <b>Autoboot</b> : une macro copiée dans le module, qu'il tape tout seul à chaque démarrage, quelques secondes (1 à 30) après que la
+      machine a reconnu le clavier — sans téléphone. ⚠️ Elle s'exécute sur toute machine où le module est branché ; « Stop » l'interrompt.</p></div>
+    <div class="app"><h4>🔌 GPIO</h4><p><b>Une section par carte</b> (maître + esclaves) sur le même écran, <b>selon son modèle</b>,
+      reconnu par la carte elle-même : SuperMini = sorties <b>o1–o4</b> et entrées <b>i1–i4</b>, DevKit N8R2 = <b>o1–o8</b> et <b>i1–i8</b>.
+      Sorties en bascule, entrées en voyants (pull-up, actif bas), bouton BOOT. Le GPIO physique (à câbler) est écrit sous chaque repère.
+      « Relire tout » interroge toutes les cartes. <b>Appui long</b> (ou clic droit)
       sur une sortie&nbsp;: popup <b>clignotement</b> (durées allumé / éteint, préréglages) ou <b>PWM</b> (rapport cyclique, fréquence),
       exécuté par la carte en continu jusqu'au prochain clic ou «&nbsp;Arrêter&nbsp;». Une sortie en effet a une bordure qui pulse.</p></div>
-    <div class="app cfg"><h4>⚙️ Réglages</h4><p><b>Module</b> : MAC, rôle, renommage. <b>Sécurité</b> : passkey et clé Wi-Fi
-      (état « usine » / « personnalisée », valeurs jamais relues). <b>Fonctions</b> : interrupteurs groupés.
+    <div class="app cfg"><h4>⚙️ Réglages</h4><p><b>Module</b> : modèle de la carte, MAC, rôle, renommage. <b>Sécurité</b> : passkey et clé Wi-Fi
+      (état « usine » / « personnalisée », valeurs jamais relues), <b>curseurs de puissance</b> Bluetooth et Wi-Fi et
+      <b>fréquence du processeur</b>, avec la température de la puce (appliquer redémarre le module). À la connexion, l'application
+      lit la configuration en réessayant plusieurs fois ; si le module ne répond pas, un bouton <b>Réessayer</b> apparaît. <b>Fonctions</b> : interrupteurs groupés.
       <b>Appairage</b> : esclaves, scan, test de liaison (20 pings, <b>graphe RTT</b> par module, pertes).
       <b>Appareil</b> : retour au toucher (vibration, clic sonore, les deux ou aucun), réglage propre au téléphone,
       utilisable sans module connecté. Par défaut&nbsp;: vibration sur Android, clic sur iPhone (pas de vibration possible depuis Safari).

@@ -24,11 +24,11 @@ verrouillage paysage best-effort) et **journal en tiroir** (☰) pour libérer l
 | **Fn/Média** | F1–F12, Ctrl/Maj/Alt/Win/AltGr, navigation, **télécommande média** ; Vol± et flèches répétés au maintien (page qui défile : frappe au relâchement, glissement = annulation) |
 | **Bios** | démarrage d'un PC (BIOS/UEFI, menu de boot, GRUB, Windows) : **grosses touches en pavés** — F1–F12, Suppr, Ctrl+Alt+Suppr ; croix de navigation (Entrée au centre), Pg, Début/Fin, **+/− du pavé numérique** (`NumpadAdd`/`NumpadSubtract` : un BIOS lit en QWERTY), Échap, Espace, ⌫ ; Tab, Maj+F10, Y/N, e/c/Ctrl+X, Pause. Ignore les modificateurs collants |
 | **Souris** | trackpad + boutons + molette — ✅ pris en charge par le firmware (USB HID souris). Appui bref = clic, **appui long (450 ms) = clic maintenu** (glisser avec le bouton, relâché au lever du doigt) ; ~60 envois/s, file GATT unique |
-| **Texte** | saisie au **clavier physique/OS** du téléphone, **envoi en direct** (diff → `txt` / `Backspace`) |
-| **Macro** | texte envoyé en une fois (`txt`), garde-fou MTU, macros mémorisées (session) |
-| **Séq.** | éditeur frappe/attente/répétition + préréglage démo + **Stop** + séquences prédéfinies |
-| **GPIO** | une section par carte (maître + esclaves) : sorties `o1`–`o4` (bascule ; appui long = clignotement / PWM autonomes) et entrées BOOT, `i1`–`i4` (voyants) — `{"t":"gpio",…}` |
-| **⚙️ Réglages** (icône de l'en-tête, à côté de « Connecter » ; contient aussi le bouton **Journal**) | config persistante du module (interrupteurs HID clavier / souris / COM / GPIO / appairage → `cfg set` + redémarrage), **appairage BLE ↔ BLE** (Rechercher → Appairer, état du lien, RSSI, Désappairer) et **Test liaison** (20 pings : RTT min/moy/max, pertes). Sous-onglet **📱 Appareil** : **retour au toucher** (vibration / clic / les deux / aucun), préférence du téléphone en `localStorage`, utilisable hors connexion ; version (`APP_VERSION`) et bouton **Recharger le site** (`reloadApp()` : vérifie que le site répond via une URL unique hors cache SW, puis vide le cache, désinscrit le SW et recharge) |
+| **Texte** (⌨️ de l'onglet Souris) | saisie au **clavier physique/OS** du téléphone, **envoi en direct** (diff → `txt` / `Backspace`) ; 💾 mémorise le texte comme **macro** |
+| **Séquence** (bas de Fn/Média) | éditeur frappe/attente/répétition + préréglage démo + **Stop** ; **💾 Mémoriser** = macro |
+| **💾 Macros** | bibliothèque des macros (texte / séquence) gardée par **ce navigateur** (`localStorage` `s3kbd.macros`) : ▶ lancer, 📝 rouvrir une séquence dans l'éditeur, renommer, supprimer. **Enregistrer / charger** un fichier JSON (`s3kbd-macros-AAAA-MM-JJ.json`, remplacer ou ajouter). **Autoboot** : copie une macro **dans le module** (`autoboot put` en morceaux ≤ 300 o, acquittés) avec un délai 1–30 s ; le module la tape seul à chaque démarrage, après la reconnaissance USB ; Tester / Désactiver |
+| **GPIO** | une section par carte (maître + esclaves) **selon son modèle** (lu par `sys` : SuperMini `o1`–`o4`/`i1`–`i4`, DevKit `o1`–`o8`/`i1`–`i8`, GPIO physique affiché sous chaque repère) : sorties (bascule ; appui long = clignotement / PWM autonomes) et entrées BOOT, `i…` (voyants) — `{"t":"gpio",…}` |
+| **⚙️ Réglages** (icône de l'en-tête, à côté de « Connecter » ; contient aussi le bouton **Journal**) | config persistante du module (interrupteurs HID clavier / souris / COM / GPIO / appairage → `cfg set` + redémarrage), **appairage BLE ↔ BLE** (Rechercher → Appairer, état du lien, RSSI, Désappairer) et **Test liaison** (20 pings : RTT min/moy/max, pertes). Sous-onglet **🔒 Sécurité** : passkey, clé Wi-Fi, **curseurs de puissance BLE** (−24…+20 dBm, ou *Auto* selon le rôle) et **Wi-Fi** (2–20 dBm), section **Processeur** (80 / 160 / 240 MHz, température de la puce) → `sys set` + redémarrage. Sous-onglet **📱 Appareil** : **retour au toucher** (vibration / clic / les deux / aucun), préférence du téléphone en `localStorage`, utilisable hors connexion ; version (`APP_VERSION`) et bouton **Recharger le site** (`reloadApp()` : vérifie que le site répond via une URL unique hors cache SW, puis vide le cache, désinscrit le SW et recharge) |
 
 **Répétition au maintien** : 1 frappe, puis une toutes les 120 ms après 400 ms (taps
 successifs, jamais `down`/`up` → aucune touche collée). Tous les caractères + ⌫, Suppr,
@@ -36,10 +36,18 @@ Entrée, Espace, Tab, flèches, Pg↑/↓, Vol± ; **jamais** les modificateurs 
 (Verr. Maj, Muet, Lecture). La commande est figée à la 1re frappe (Maj armé + maintien de
 « a » = « AAAA »).
 
-À la connexion, l'app envoie `{"t":"cfg","a":"get"}` ; la réponse `cfg:{…}` **masque les
-onglets** des fonctions désactivées (clavier → AZERTY/Num/Fn/Bios/Texte/Macro/Séq., souris,
-GPIO) et la section Appairage si `pair` est à 0. Les STATUS préfixés (`cfg:`, `scan:`,
-`pair:`, `link:`, `gpio:`, `pong:`) sont des événements dispatchés dans `handleStatus`.
+À la connexion, l'app **synchronise** (`syncModule`) : `{"t":"cfg","a":"get"}` avec
+**ré-essais** (6 essais, délai croissant, réabonnement aux notifications BLE au 3ᵉ) — un seul
+`cfg get` perdu laissait les Réglages « Hors connexion » alors que le lien était actif. Le
+bandeau des Réglages distingue *hors connexion*, *lecture en cours (essai n/6)* et *échec*
+(bouton **Réessayer**) ; ouvrir les Réglages connecté sans config relance la lecture. Puis
+`sys get` (modèle, puissances) et `autoboot get` ; le modèle de chaque esclave est lu dès que
+son lien monte. Un ancien firmware répond `err:type` : repli immédiat (brochage SuperMini,
+réglages de puissance masqués). La réponse `cfg` **masque les onglets** des fonctions
+désactivées (clavier → AZERTY/Num/Fn/Bios/Macros/Texte, souris, GPIO) et la section
+Appairage si `pair` est à 0. Les STATUS sont des frames JSON `{"id":n,…}` dispatchées dans
+`handleStatus` ; en BLE, une frame découpée par le firmware (morceaux préfixés `0x1F`) est
+recollée **en octets** dans `onStatus` avant décodage.
 
 - **Connexion BLE** filtrée sur le service `9f1d0000-…-1001` (socle §5.1), notifications
   **STATUS**, indicateur d'état + reconnexion, **diagnostic** au chargement (contexte
