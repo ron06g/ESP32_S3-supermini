@@ -1,5 +1,5 @@
 // ===========================================================================
-//  status_led.h  —  Indicateur d'etat sur LED RGB (WS2812, GPIO48)
+//  status_led.h  —  Indicateur d'etat sur LED RGB (WS2812, GPIO48 sur les deux profils)
 // ---------------------------------------------------------------------------
 //  Moteur d'animation dans une TACHE FreeRTOS dediee. Le reste du firmware ne
 //  fait que declarer un ETAT (ledSetMode / ledSetError) ou demander une
@@ -39,7 +39,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
-#define LED_PIN 48        // WS2812 sur la SuperMini (cf. cahier des charges S3 §2)
+static uint8_t g_ledPin = 48;  // WS2812 : broche du profil de carte (board.h), fixee avant ledBegin()
 #define LED_MAX 48        // intensite max par canal (0-255) — doux, non eblouissant
 #define LED_TICK_MS 20    // periode de rafraichissement (~50 FPS)
 #define LED_PULSE_GAP 45  // temps eteint entre 2 impulsions -> repetitions distinctes
@@ -103,7 +103,7 @@ static void ledRssiStep() {
   g_ledSigLvl = (uint8_t)(cur + d);
 }
 
-static inline void ledWrite(led_rgb_t c) { rgbLedWrite(LED_PIN, c.r, c.g, c.b); }
+static inline void ledWrite(led_rgb_t c) { rgbLedWrite(g_ledPin, c.r, c.g, c.b); }
 
 // Rendu du fond « erreur » : g_ledErrCode clignotements rouges, puis pause.
 static led_rgb_t ledRenderError(uint32_t t) {

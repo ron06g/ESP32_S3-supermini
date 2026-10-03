@@ -5,9 +5,11 @@
 //    - sorties  o1, o2, o3…  (numérotées à partir de 1, dans l'ordre de la table) ;
 //    - entrées  i1, i2, i3…  (idem) ;
 //    - « BOOT » : bouton intégré (GPIO0, entrée), nom conservé — testable sans câblage.
-//  Ajouter une broche = une ligne dans GPIO_TABLE avec le repère SUIVANT de son sens
-//  (o5, i5…) ; rien d'autre ne change. Garder les libellés alignés avec
-//  WEB/Keyboard/app.js (GPIO_OUT / GPIO_IN). Recherche insensible à la casse.
+//  Les broches dépendent de la CARTE : GPIO_TABLE est construite au démarrage
+//  depuis le profil détecté (board.h, g_board). Ajouter une broche = l'ajouter à la
+//  liste out[] / in[] du profil ; les repères suivent l'ordre. Le web lit la liste
+//  de chaque carte (commande sys) : rien à recopier côté app.js (sauf le repli
+//  HW_DEFAULT pour un ancien firmware). Recherche insensible à la casse.
 //
 //  Protocole (le champ `id` désigne la carte ; le maître route, la carte visée exécute) :
 //    {"t":"gpio","p":"o1","a":"set|clr|tgl|read"}     niveau / lecture d'une broche
@@ -47,18 +49,29 @@
 #include <ArduinoJson.h>
 
 enum : uint8_t { GP_IN = 0, GP_OUT = 1 };
-struct gpio_def_t { const char* label; uint8_t pin; uint8_t dir; };
+struct gpio_def_t { char label[6]; uint8_t pin; uint8_t dir; };
 
-// >>> Table unique : repère logique -> GPIO physique (S3 SuperMini). <<<
-//     Nouvelle broche : ajouter une ligne avec le repère suivant de son sens.
-static const gpio_def_t GPIO_TABLE[] = {
-  { "BOOT", 0,  GP_IN  },                          // bouton intégré
-  { "o1",   4,  GP_OUT }, { "o2",  5, GP_OUT }, { "o3",  6, GP_OUT }, { "o4",  7, GP_OUT },
-  { "i1",   8,  GP_IN  }, { "i2",  9, GP_IN  }, { "i3", 10, GP_IN  }, { "i4", 11, GP_IN  },
-};
-static const size_t GPIO_COUNT = sizeof(GPIO_TABLE) / sizeof(GPIO_TABLE[0]);
+// >>> Table unique : repère logique -> GPIO physique, remplie par gpioBuildTable()
+//     depuis le profil de la carte (board.h) : BOOT, puis o1.., puis i1.. <<<
+#define GPIO_MAX (1 + BOARD_MAX_OUT + BOARD_MAX_IN)
+static gpio_def_t GPIO_TABLE[GPIO_MAX];
+static size_t     GPIO_COUNT = 0;
 
-static volatile uint8_t g_gpioState[GPIO_COUNT];   // sorties : niveau logique ; entrées : valeur débouncée
+static void gpioBuildTable() {
+  size_t n = 0;
+  GPIO_TABLE[n++] = { "BOOT", 0, GP_IN };                        // bouton intégré
+  for (uint8_t k = 0; k < g_board->nOut; k++, n++) {
+    snprintf(GPIO_TABLE[n].label, sizeof(GPIO_TABLE[n].label), "o%u", k + 1);
+    GPIO_TABLE[n].pin = g_board->out[k]; GPIO_TABLE[n].dir = GP_OUT;
+  }
+  for (uint8_t k = 0; k < g_board->nIn; k++, n++) {
+    snprintf(GPIO_TABLE[n].label, sizeof(GPIO_TABLE[n].label), "i%u", k + 1);
+    GPIO_TABLE[n].pin = g_board->in[k]; GPIO_TABLE[n].dir = GP_IN;
+  }
+  GPIO_COUNT = n;
+}
+
+static volatile uint8_t g_gpioState[GPIO_MAX];     // sorties : niveau logique ; entrées : valeur débouncée
 static bool g_gpioReady = false;
 
 // ---------------------------------------------------------------------------
@@ -92,7 +105,7 @@ struct gpio_fx_t {
   uint32_t   left;            // cycles restants ; 0 = infini
   TickType_t next;            // prochaine échéance (ticks)
 };
-static gpio_fx_t         g_fx[GPIO_COUNT];
+static gpio_fx_t         g_fx[GPIO_MAX];
 static SemaphoreHandle_t g_gpioMux = nullptr;
 static TaskHandle_t      g_fxTask  = nullptr;
 
@@ -153,7 +166,7 @@ static void gpioFxTask(void*) {
     xSemaphoreGive(g_gpioMux);
     if (wait) ulTaskNotifyTake(pdTRUE, wait);      // réveil : échéance OU nouvelle commande (xTaskNotifyGive)
 
-    uint8_t done[GPIO_COUNT] = {0};
+    uint8_t done[GPIO_MAX] = {0};
     xSemaphoreTake(g_gpioMux, portMAX_DELAY);
     now = xTaskGetTickCount();
     for (size_t i = 0; i < GPIO_COUNT; i++) {
@@ -186,7 +199,7 @@ static void gpioFxTask(void*) {
 
 // Tâche de scrutation des entrées (core 0) : 3 échantillons identiques avant changement.
 static void gpioTask(void*) {
-  uint8_t stable[GPIO_COUNT] = {0};
+  uint8_t stable[GPIO_MAX] = {0};
   for (;;) {
     for (size_t i = 0; i < GPIO_COUNT; i++) {
       if (GPIO_TABLE[i].dir != GP_IN) continue;
@@ -199,6 +212,7 @@ static void gpioTask(void*) {
 }
 
 static void gpioBegin() {
+  gpioBuildTable();                                  // broches du profil détecté (boardDetect fait avant)
   for (size_t i = 0; i < GPIO_COUNT; i++) {
     if (GPIO_TABLE[i].dir == GP_OUT) {
       pinMode(GPIO_TABLE[i].pin, OUTPUT); digitalWrite(GPIO_TABLE[i].pin, LOW); g_gpioState[i] = 0;

@@ -168,7 +168,9 @@ static void wifiPortalBegin() {
   WiFi.softAPConfig(AP_IP, AP_IP, AP_MASK);      // IP/passerelle fixes AVANT softAP
   bool ok = WiFi.softAP(apSsid, g_cfg.apPsk, 1 /*canal*/, 0 /*visible*/, 1 /*max_conn*/);
   WiFi.setSleep(false);                           // pas de modem-sleep : captif + WS réactifs
-  WiFi.setTxPower(WIFI_POWER_11dBm);              // conso/chaleur : AP courte portée (tél. en main), ~19->11 dBm
+  // Puissance d'émission réglable (commande sys, défaut 11 dBm : AP courte portée,
+  // téléphone en main). L'API attend des quarts de dBm.
+  WiFi.setTxPower((wifi_power_t)(g_cfg.txWifi * 4));
   DBG("[WiFi] SoftAP '%s' %s — IP %s\n",
                 apSsid, ok ? "OK" : "ECHEC (cle < 8 car. ?)",
                 WiFi.softAPIP().toString().c_str());

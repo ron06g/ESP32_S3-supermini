@@ -1,7 +1,8 @@
 // ===========================================================================
 //  hid_firmware.ino  —  Lot S3 « HID-Bridge » (clavier + souris HID sans fil)
 // ---------------------------------------------------------------------------
-//  ESP32-S3 (SuperMini) qui est SIMULTANEMENT :
+//  ESP32-S3 (SuperMini ou DevKit WROOM-1 N8R2 : UN binaire, profil de carte
+//  detecte au demarrage par les eFuses, cf. board.h) qui est SIMULTANEMENT :
 //    - un clavier USB HID (+ Consumer Control) et une souris, activables
 //      independamment (parametres en flash, config.h) ;
 //    - un port COM USB optionnel (le CDC unique bascule en mode protocole) ;
@@ -54,6 +55,7 @@
 #include <BLESecurity.h>                // LESC : passkey statique, iocap, bonding (NimBLE)
 #include <host/ble_gap.h>               // ble_gap_conn_desc, ble_gap_unpair (pile NimBLE du coeur 3.x)
 #include <host/ble_store.h>             // ble_store_clear (effacement des bonds)
+#include <host/ble_att.h>               // ble_att_mtu (decoupage des STATUS trop longs)
 #include "esp_mac.h"
 #include "esp_heap_caps.h"              // mesures de heap (interne / PSRAM)
 
@@ -92,6 +94,7 @@ static const uint32_t BOOT_FACTORY_MS   = 20000;   // BOOT maintenu 20 s = reset
 
 // --- Declarations avancees partagees par les modules (.h) ---
 static void enqueueCommand(const uint8_t* data, size_t len);
+static bool enqueueTrusted(const char* json, size_t len);   // macro autoboot (NVS), sans garde-fou de taille
 static void releaseAll();
 static void notifyStatus(const char* s);   // adaptateur : texte legacy OU JSON -> diffusion
 static void statusRaw(const char* s);       // diffusion brute d'une frame deja construite (JSON)
@@ -101,6 +104,7 @@ static void secUnpairMac(const uint8_t* mac);   // efface le bond d'un pair (des
 extern uint8_t g_myId;                      // id de cette carte (tag des STATUS, gpio_panel.h)
 
 #include "config.h"                    // parametres NVS (g_cfg)
+#include "board.h"                     // profil de carte detecte (LED, GPIO)
 
 // DEBUG retire du firmware : DBG/DBGLN sont des no-op (aucune console USB). Les
 // appels restent en place mais ne produisent rien (le compilateur les elimine).
@@ -112,6 +116,7 @@ extern uint8_t g_myId;                      // id de cette carte (tag des STATUS
 #include "com_port.h"                  // 2e port CDC (protocole sur COM)
 #include "gpio_panel.h"                // panneau GPIO
 #include "ble_link.h"                  // appairage maitre / esclave
+#include "autoboot.h"                  // macro lancee au demarrage
 
 // ---------------------------------------------------------------------------
 //  Objets USB — instancies dynamiquement selon la config (le constructeur
@@ -134,6 +139,8 @@ static char        g_bleMac[18] = "";
 uint8_t g_myId = 0;                  // id de CETTE carte : 0 (maitre/standard) ou selfId (esclave)
 volatile bool g_connected = false;   // un client BLE (telephone, ou le maitre si esclave)
 static volatile uint16_t g_connHandle = BLE_HS_CONN_HANDLE_NONE;  // esclave : lien vers le maitre (RSSI LED)
+static volatile uint16_t g_peerHandle = BLE_HS_CONN_HANDLE_NONE;  // client du serveur GATT (MTU des STATUS), tous roles
+static SemaphoreHandle_t g_notifyMux  = nullptr;                   // une frame STATUS BLE a la fois (morceaux non entrelaces)
 volatile bool g_stop      = false;   // demande d'arret de sequence
 QueueHandle_t g_cmdQueue  = nullptr; // file de char* (JSON \0-termine, malloc)
 SemaphoreHandle_t g_stopMux = nullptr; // serialise le fast-path STOP entre BLE et Wi-Fi
@@ -195,14 +202,53 @@ static void releaseAll() {
 // ===========================================================================
 //  STATUS (socle §5 / spec S3 §4) — diffuse vers BLE, Wi-Fi, COM, console
 // ===========================================================================
+// Notification STATUS cote BLE. Une notification porte au plus MTU-3 octets :
+// une frame plus longue (cfg d'un maitre et de ses esclaves : jusqu'a ~470 o)
+// arrivait TRONQUEE — JSON invalide, Reglages « hors connexion » — tant que le
+// MTU n'etait pas negocie (juste apres la connexion) ou s'il restait petit. On la
+// DECOUPE : chaque morceau non final commence par l'octet STATUS_FRAG (0x1F), le
+// dernier n'a pas de prefixe ; le web recolle les octets avant de decoder.
+// Un esclave ne decoupe jamais : son client est le maitre (MTU 517 negocie par
+// ble_link) qui relaie les frames verbatim. Le verrou empeche deux taches
+// (worker, gpio, relay…) d'entrelacer leurs morceaux ; il couvre aussi le couple
+// setValue/notify, qui n'est pas atomique.
+#define STATUS_FRAG 0x1F
+static void bleNotify(const char* s, size_t len) {
+  if (!g_statusChar) return;
+  if (g_notifyMux) xSemaphoreTake(g_notifyMux, portMAX_DELAY);
+  size_t room = 20;                            // MTU 23 par defaut (avant l'echange)
+  uint16_t h = g_peerHandle;
+  if (h != BLE_HS_CONN_HANDLE_NONE) {
+    uint16_t mtu = ble_att_mtu(h);
+    if (mtu > 23) room = mtu - 3;
+  }
+  if (!g_connected || len <= room || g_cfg.role == ROLE_SLAVE) {
+    g_statusChar->setValue((uint8_t*)s, len);
+    if (g_connected) g_statusChar->notify();   // garde g_connected : specifique BLE
+  } else {
+    static uint8_t part[STATUS_MAX + 4];       // statique : pile des taches appelantes reduite (gpio 3 Ko)
+    if (room > sizeof(part)) room = sizeof(part);
+    size_t off = 0;
+    while (len - off > room) {
+      size_t n = room - 1;
+      part[0] = STATUS_FRAG;
+      memcpy(part + 1, s + off, n);
+      g_statusChar->setValue(part, n + 1);
+      g_statusChar->notify();
+      off += n;
+      vTaskDelay(pdMS_TO_TICKS(4));            // laisse la pile ecouler ses tampons
+    }
+    g_statusChar->setValue((uint8_t*)s + off, len - off);
+    g_statusChar->notify();
+  }
+  if (g_notifyMux) xSemaphoreGive(g_notifyMux);
+}
+
 // Diffusion BRUTE : `s` est deja la frame finale (JSON). Aucun reflet LED ni
 // interpretation -> sert a relayer VERBATIM les STATUS d'un esclave (deja
 // tagues de son id) et est appelee par l'adaptateur notifyStatus.
 static void statusRaw(const char* s) {
-  if (g_statusChar) {
-    g_statusChar->setValue((uint8_t*)s, strlen(s));
-    if (g_connected) g_statusChar->notify();   // garde g_connected : specifique BLE
-  }
+  bleNotify(s, strlen(s));
   wifiQueueStatus(s);                          // diffusion Wi-Fi (drainee par la tache reseau)
   comQueueStatus(s);                           // diffusion port COM (drainee par la tache com)
   DBG("[STATUS] %s\n", s);
@@ -608,6 +654,84 @@ static void handleCfg(JsonDocument& doc) {
 }
 
 // ===========================================================================
+//  Systeme : {"t":"sys","a":"get|set",...} — modele de carte, GPIO, CPU, puissances
+// ---------------------------------------------------------------------------
+//  ROUTE par id comme gpio (le maitre interroge / regle chaque esclave) : chaque
+//  carte repond pour ELLE-MEME, taguee de son id. Hors de cfg pour ne pas faire
+//  grossir la frame cfg (deja ~470 o avec 3 esclaves nommes).
+//    get -> {"id":n,"ev":"sys","b":"devkit","bn":"S3 DevKit","chip":"N8R2",
+//            "cpu":160,"txb":0,"txba":1,"txw":11,"temp":41.5,
+//            "o":[4,5,6,7,15,16,17,18],"i":[8,9,10,11,12,13,14,21]}
+//           b/bn = profil detecte (board.h), chip = flash (F = integree, N = externe)
+//           + taille en Mo + R<PSRAM Mo> ; o/i = GPIO physiques de o1.. / i1..
+//           (BOOT = GPIO0 en plus) ; txb = puissance BLE effective, txba = 1 si
+//           auto (selon le role) ; temp = capteur interne de la puce (°C).
+//    set -> champs facultatifs cpu (80|160|240), txw (2..20 dBm), txb (palier
+//           -24..+18 par 3, ou 20, ou "auto") ; enregistre et REDEMARRE
+//           ({"id":n,"ev":"sys","saved":true}). Valeur invalide : err:sys, rien
+//           n'est modifie.
+// ===========================================================================
+static void statusSys() {
+  JsonDocument d;
+  d["id"]   = g_myId;
+  d["ev"]   = "sys";
+  d["b"]    = g_board->id;
+  d["bn"]   = g_board->name;
+  d["chip"] = g_chip;
+  d["cpu"]  = getCpuFrequencyMhz();
+  d["txb"]  = bleTxDbm();
+  d["txba"] = g_cfg.txBle == TXB_AUTO ? 1 : 0;
+  d["txw"]  = g_cfg.txWifi;
+  d["temp"] = roundf(temperatureRead() * 10) / 10;
+  JsonArray o = d["o"].to<JsonArray>();
+  for (uint8_t k = 0; k < g_board->nOut; k++) o.add(g_board->out[k]);
+  JsonArray in = d["i"].to<JsonArray>();
+  for (uint8_t k = 0; k < g_board->nIn; k++) in.add(g_board->in[k]);
+  char out[STATUS_MAX];
+  serializeJson(d, out, sizeof(out));
+  statusRaw(out);
+}
+
+static void handleSys(JsonDocument& doc) {
+  const char* a = doc["a"] | "get";
+  if (!strcmp(a, "set")) {
+    uint16_t cpu = g_cfg.cpuMhz;
+    int8_t   txw = g_cfg.txWifi, txb = g_cfg.txBle;
+    bool ok = true;
+    if (!doc["cpu"].isNull()) {
+      ok = ok && doc["cpu"].is<int>() && sysCpuValid(doc["cpu"].as<int>());
+      if (ok) cpu = (uint16_t)doc["cpu"].as<int>();
+    }
+    if (!doc["txw"].isNull()) {
+      ok = ok && doc["txw"].is<int>() && sysTxwValid(doc["txw"].as<int>());
+      if (ok) txw = (int8_t)doc["txw"].as<int>();
+    }
+    if (!doc["txb"].isNull()) {
+      if (doc["txb"].is<const char*>() && !strcmp(doc["txb"].as<const char*>(), "auto")) txb = TXB_AUTO;
+      else {
+        ok = ok && doc["txb"].is<int>() && sysTxbValid(doc["txb"].as<int>());
+        if (ok) txb = (int8_t)doc["txb"].as<int>();
+      }
+    }
+    if (!ok) { notifyStatus("err:sys"); return; }
+    g_cfg.cpuMhz = cpu; g_cfg.txWifi = txw; g_cfg.txBle = txb;
+    cfgSave();
+    char s[48];
+    snprintf(s, sizeof(s), "{\"id\":%u,\"ev\":\"sys\",\"saved\":true}", g_myId);
+    rebootWithStatus(s);
+    return;
+  }
+  statusSys();
+}
+
+// Palier BLE de l'API (ESP_PWR_LVL_N24 = 0 … P18 = 14, P20 = 15) d'une puissance en dBm.
+static esp_power_level_t bleTxLevel(int dbm) {
+  if (dbm >= 20)  return ESP_PWR_LVL_P20;
+  if (dbm < -24)  dbm = -24;
+  return (esp_power_level_t)((dbm + 24) / 3);
+}
+
+// ===========================================================================
 //  Securite (phase LESC) : {"t":"sec","a":"passkey|wifi|get",...} — TOUJOURS locale
 // ---------------------------------------------------------------------------
 //  passkey : refuse si des esclaves sont appaires (regle) ; sinon ecrit la
@@ -738,7 +862,7 @@ static void processCommand(const char* json) {
 
   const char* t = doc["t"] | "";
 
-  // --- Toujours locales, quel que soit l'id : cfg / pair / sec / name ---
+  // --- Toujours locales, quel que soit l'id : cfg / pair / sec / name / autoboot ---
   //     (name gere lui-meme le routage maitre->esclave : ne pas le laisser au
   //      routage verbatim generique ci-dessous, qui ne mettrait pas a jour la
   //      table locale du maitre.)
@@ -746,6 +870,7 @@ static void processCommand(const char* json) {
   if (!strcmp(t, "pair")) { handlePair(doc); return; }
   if (!strcmp(t, "sec"))  { handleSec(doc);  return; }
   if (!strcmp(t, "name")) { handleName(doc); return; }
+  if (!strcmp(t, "autoboot")) { handleAutoboot(doc); return; }
 
   // --- Routage par id : 0 = cette carte (maitre/standard/esclave local),
   //     1..MAX_SLAVES = esclave route par le maitre. id absent => 0. ---
@@ -772,6 +897,9 @@ static void processCommand(const char* json) {
   } else if (!strcmp(t, "gpio")) {
     if (!g_cfg.gpio) { notifyStatus("err:gpio"); return; }
     gpioHandle(doc);
+
+  } else if (!strcmp(t, "sys")) {
+    handleSys(doc);
 
   } else if (!strcmp(t, "char")) {
     if (!g_kb) { notifyStatus("err:nohid"); return; }
@@ -875,6 +1003,19 @@ static void enqueueCommand(const uint8_t* data, size_t len) {
   }
 }
 
+// Enfile une commande de CONFIANCE (macro autoboot relue en NVS, deja validee) :
+// meme file que les transports, sans le garde-fou CMD_MAX_BYTES (une macro peut
+// depasser une ecriture BLE : elle a ete recue en morceaux).
+static bool enqueueTrusted(const char* json, size_t len) {
+  if (!json || !len || !g_cmdQueue) return false;
+  char* buf = (char*)malloc(len + 1);
+  if (!buf) return false;
+  memcpy(buf, json, len);
+  buf[len] = 0;
+  if (xQueueSend(g_cmdQueue, &buf, 0) != pdTRUE) { free(buf); return false; }
+  return true;
+}
+
 // ===========================================================================
 //  Tache worker : consomme la file, execute. Seul thread qui touche l'USB HID.
 // ===========================================================================
@@ -959,6 +1100,7 @@ class ServerCB : public BLEServerCallbacks {
       return;
     }
     g_connected = true;
+    g_peerHandle = d->conn_handle;               // MTU de ce client (decoupage des STATUS)
     if (g_cfg.role == ROLE_SLAVE) g_connHandle = d->conn_handle;
     DBG("[BLE] client connecte %s\n", remote.toString().c_str());
     ledSetMode(ledBaseMode());
@@ -968,6 +1110,7 @@ class ServerCB : public BLEServerCallbacks {
   void onDisconnect(BLEServer* s) override {
     g_connected = false;
     g_connHandle = BLE_HS_CONN_HANDLE_NONE;
+    g_peerHandle = BLE_HS_CONN_HANDLE_NONE;
     ledSetRssi(0);
     DBGLN("[BLE] client deconnecte");
     ledSetMode(ledBaseMode());
@@ -982,7 +1125,7 @@ class ServerCB : public BLEServerCallbacks {
     BLEDevice::startAdvertising();       // re-annonce
   }
   void onMtuChanged(BLEServer* s, ble_gap_conn_desc* d, uint16_t mtu) override {
-    DBG("[BLE] MTU=%u\n", mtu);      // cfg:{...} (~140 o) exige MTU >= 150
+    DBG("[BLE] MTU=%u\n", mtu);      // une frame > MTU-3 est decoupee (bleNotify)
   }
 };
 
@@ -1053,10 +1196,16 @@ static bool bleBegin() {
   BLESecurity::setCapability(g_cfg.role == ROLE_SLAVE ? ESP_IO_CAP_IN : ESP_IO_CAP_OUT);
   BLESecurity::setPassKey(true, g_cfg.passkey);                  // statique (0 = 000000)
 
-  // Conso/chaleur : en mode standard (telephone a courte portee) on baisse la
-  // puissance BLE ; en appaire (maitre/esclave) le lien BLE<->BLE reste a fond.
-  if (g_cfg.role == ROLE_STD) BLEDevice::setPower(ESP_PWR_LVL_N0);   // 0 dBm : couvre une piece
-  else                        BLEDevice::setPower(ESP_PWR_LVL_P9);   // +9 dBm : portee max du lien
+  // Puissance d'emission : reglage `sys` (Reglages > Securite), sinon auto selon
+  // le role — standard 0 dBm (telephone dans la piece), appaire +9 dBm (lien
+  // BLE<->BLE). Le S3 monte jusqu'a +20 dBm (ESP_PWR_LVL_P20). Annonce et scan
+  // fixes explicitement : sur le S3 ils ne suivent pas forcement le defaut.
+  {
+    esp_power_level_t lvl = bleTxLevel(bleTxDbm());
+    BLEDevice::setPower(lvl, ESP_BLE_PWR_TYPE_DEFAULT);
+    BLEDevice::setPower(lvl, ESP_BLE_PWR_TYPE_ADV);
+    BLEDevice::setPower(lvl, ESP_BLE_PWR_TYPE_SCAN);
+  }
   BLEDevice::setMTU(517);                // negociation MTU eleve (socle §5.4)
   strncpy(g_bleMac, BLEDevice::getAddress().toString().c_str(), sizeof(g_bleMac) - 1);
 
@@ -1131,18 +1280,23 @@ static bool bleBegin() {
 //  setup / loop
 // ===========================================================================
 void setup() {
-  setCpuFrequencyMhz(160);                       // 240->160 MHz : moitie moins de chaleur CPU, large pour cet usage
+  // --- Parametres persistants (AVANT l'USB : ils choisissent les interfaces ;
+  //     avant la frequence CPU, qu'ils fixent) ---
+  cfgLoad();
+  g_myId = (g_cfg.role == ROLE_SLAVE) ? g_cfg.selfId : 0;   // id de cette carte (tag des STATUS)
+  setCpuFrequencyMhz(g_cfg.cpuMhz);              // defaut 160 MHz : moitie moins de chaleur que 240
+
+  // --- Profil de carte (eFuses) : broche LED + GPIO exposes ---
+  boardDetect();
+  g_ledPin = g_board->ledPin;
 
   // --- LED d'etat (tache dediee) : auto-test puis fond BOOT ---
   ledBegin();
 
-  // --- Parametres persistants (AVANT l'USB : ils choisissent les interfaces) ---
-  cfgLoad();
-  g_myId = (g_cfg.role == ROLE_SLAVE) ? g_cfg.selfId : 0;   // id de cette carte (tag des STATUS)
-
   // --- File + tache worker (avant l'USB, pour ne rien perdre) ---
   g_cmdQueue = xQueueCreate(CMD_QUEUE_LEN, sizeof(char*));
   g_stopMux  = xSemaphoreCreateMutex();          // avant l'USB/BLE (les callbacks l'utilisent)
+  g_notifyMux = xSemaphoreCreateMutex();         // avant le BLE (statusRaw)
   xTaskCreatePinnedToCore(workerTask, "worker", 8192, nullptr, 5, nullptr, 1);
   xTaskCreatePinnedToCore(bootResetTask, "boot", 2560, nullptr, 2, nullptr, 0);  // 5 appuis BOOT = desappairage
 
@@ -1176,6 +1330,9 @@ void setup() {
 
   // --- Lien vers l'esclave (maitre) ---
   if (g_cfg.role == ROLE_MASTER) linkBegin();
+
+  // --- Macro autoboot : une fois, apres le montage USB + delai (jamais sur un esclave) ---
+  autobootBegin(g_kb && g_cfg.role != ROLE_SLAVE);
 
   // --- Etat final : repos ou erreur si le GATT a echoue ---
   if (!bleOk) {

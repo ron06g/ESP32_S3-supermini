@@ -10,7 +10,9 @@
 //  du maître, sur un esclave), self (uchar = id attribué à l'esclave par son
 //  maître), slaves (blob = table de routage id↔MAC + nom du maître),
 //  pk (uint32 = passkey LESC statique, 0 = 000000), wpsk (chaîne = clé WPA2 du
-//  SoftAP), nm (chaîne = nom convivial du module).
+//  SoftAP), nm (chaîne = nom convivial du module), cpu (ushort = MHz), txw
+//  (char = puissance Wi-Fi en dBm), txb (char = puissance BLE en dBm, absente =
+//  auto selon le rôle). La macro autoboot a ses propres clés (autoboot.h).
 //
 //  SÉCURITÉ (phase LESC). La passkey statique `passkey` sert :
 //    - à l'appairage téléphone↔module (l'utilisateur la saisit) ;
@@ -45,6 +47,19 @@ enum : uint8_t { ROLE_STD = 0, ROLE_MASTER = 1, ROLE_SLAVE = 2 };
 // Sert aussi de référence pour l'indicateur « Wi-Fi personnalisé » (statusCfg).
 #define AP_PSK_DEFAULT "12345678"
 
+// Fréquence CPU et puissances d'émission (commande `sys`, Réglages > Sécurité).
+// Valeurs par défaut = l'optimisation conso/chaleur historique.
+#define CPU_MHZ_DEF  160         // 80 / 160 / 240 (sous 80 MHz : plus de radio ni d'USB)
+#define TXW_DBM_DEF  11          // Wi-Fi : AP courte portée, téléphone en main
+#define TXW_DBM_MIN  2
+#define TXW_DBM_MAX  20
+#define TXB_AUTO     (-128)      // BLE « auto » : 0 dBm en standard, +9 dBm appairé (lien maître↔esclave)
+
+static bool sysCpuValid(int mhz) { return mhz == 80 || mhz == 160 || mhz == 240; }
+static bool sysTxwValid(int dbm) { return dbm >= TXW_DBM_MIN && dbm <= TXW_DBM_MAX; }
+// Paliers BLE de l'ESP32-S3 : -24..+18 dBm par pas de 3, puis +20 (ESP_PWR_LVL_N24..P20).
+static bool sysTxbValid(int dbm) { return dbm == 20 || (dbm >= -24 && dbm <= 18 && (dbm + 24) % 3 == 0); }
+
 struct slave_nv_t {
   uint8_t id;             // 1..MAX_SLAVES ; 0 = slot libre
   uint8_t mac[6];         // MAC BLE de l'esclave
@@ -68,6 +83,9 @@ struct cfg_t {
   char     apPsk[64];      // clé WPA2 du SoftAP (8..63 car.)
   char     name[NAME_MAX]; // nom convivial de CE module ("" = défaut S3-KBD-XXYY)
   slave_nv_t slaves[MAX_SLAVES];   // maître : table de routage id↔MAC(+nom)
+  uint16_t cpuMhz;         // fréquence CPU (80 / 160 / 240)
+  int8_t   txWifi;         // puissance Wi-Fi (dBm, TXW_DBM_MIN..MAX)
+  int8_t   txBle;          // puissance BLE (dBm, palier valide) ou TXB_AUTO
 };
 
 static cfg_t g_cfg;
@@ -102,9 +120,15 @@ static void cfgLoad() {
   // conséquence : un changement de sécurité impose de toute façon un ré-appairage.
   if (p.getBytesLength("slaves") == sizeof(g_cfg.slaves))
     p.getBytes("slaves", g_cfg.slaves, sizeof(g_cfg.slaves));
+  g_cfg.cpuMhz = p.getUShort("cpu", CPU_MHZ_DEF);
+  g_cfg.txWifi = p.getChar("txw", TXW_DBM_DEF);
+  g_cfg.txBle  = p.getChar("txb", TXB_AUTO);              // absente = auto (selon le rôle)
   p.end();
   if (g_cfg.role > ROLE_SLAVE) g_cfg.role = ROLE_STD;
   if (g_cfg.passkey > 999999)  g_cfg.passkey = 0;        // garde-fou (6 chiffres)
+  if (!sysCpuValid(g_cfg.cpuMhz)) g_cfg.cpuMhz = CPU_MHZ_DEF;
+  if (!sysTxwValid(g_cfg.txWifi)) g_cfg.txWifi = TXW_DBM_DEF;
+  if (g_cfg.txBle != TXB_AUTO && !sysTxbValid(g_cfg.txBle)) g_cfg.txBle = TXB_AUTO;
 }
 
 static void cfgSave() {
@@ -126,7 +150,18 @@ static void cfgSave() {
   p.putString("nm", g_cfg.name);
   p.putBytes("peer", g_cfg.peer, 6);
   p.putBytes("slaves", g_cfg.slaves, sizeof(g_cfg.slaves));
+  p.putUShort("cpu", g_cfg.cpuMhz);
+  p.putChar("txw", g_cfg.txWifi);
+  if (g_cfg.txBle == TXB_AUTO) p.remove("txb");          // auto = clé absente
+  else                         p.putChar("txb", g_cfg.txBle);
   p.end();
+}
+
+// Puissance BLE effective (dBm) : la valeur choisie, sinon le défaut du rôle
+// (standard : un téléphone dans la pièce ; appairé : portée du lien BLE↔BLE).
+static int8_t bleTxDbm() {
+  if (g_cfg.txBle != TXB_AUTO) return g_cfg.txBle;
+  return g_cfg.role == ROLE_STD ? 0 : 9;
 }
 
 // MAC binaire -> "aa:bb:cc:dd:ee:ff" (out : 18 octets mini)
