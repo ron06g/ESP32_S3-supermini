@@ -8,7 +8,7 @@ const STATUS_UUID  = '9f1d0002-5b8e-4a4a-9c2a-2b7f3e6a1001';
 const MOD = { ctrl:1, shift:2, alt:4, gui:8, altgr:16 };
 // Version de l'app, affichée dans Réglages > Appareil. À incrémenter avec les
 // ?v= de index.html et le CACHE de sw.js.
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 
 let device=null, gatt=null, cmdChar=null, statusChar=null;
 let deviceName='', lastStatus='';
@@ -84,12 +84,7 @@ async function bleConnect() {
     const svc = await gatt.getPrimaryService(SERVICE_UUID);
     cmdChar = await svc.getCharacteristic(CMD_UUID);
     logLine('in', 'caractéristique CMD OK');
-    try {
-      statusChar = await svc.getCharacteristic(STATUS_UUID);
-      await statusChar.startNotifications();
-      statusChar.addEventListener('characteristicvaluechanged', onStatus);
-      logLine('in', 'notifications STATUS activées');
-    } catch (e) { logLine('err', 'STATUS indisponible: ' + e.name + ' — ' + e.message); }
+    await startStatusNotifications(svc);
     deviceName = device.name || 'S3-KBD'; lastStatus = '';
     setConn('on'); logLine('in', 'connecté à ' + deviceName);
     onConnected();
@@ -99,12 +94,40 @@ async function bleConnect() {
     else logLine('err', 'connexion: ' + e.name + ' — ' + e.message);
   }
 }
+// STATUS est chiffré (READ_ENC) : l'abonnement peut déclencher l'appairage et
+// échouer pendant que l'utilisateur saisit la passkey. On réessaie avant de
+// renoncer (la synchronisation réarmera encore les notifications si besoin).
+async function startStatusNotifications(svc) {
+  for (let k = 1; k <= 3; k++) {
+    try {
+      if (!statusChar) {
+        statusChar = await svc.getCharacteristic(STATUS_UUID);
+        statusChar.addEventListener('characteristicvaluechanged', onStatus);
+      }
+      await statusChar.startNotifications();
+      logLine('in', 'notifications STATUS activées');
+      return true;
+    } catch (e) {
+      logLine('err', 'STATUS (essai ' + k + '/3) : ' + e.name + ' — ' + e.message);
+      await sleep(700 * k);
+    }
+  }
+  return false;
+}
 function bleDisconnect() { if (gatt && gatt.connected) gatt.disconnect(); onDisconnected(); }
 function onDisconnected() {
-  cmdChar = statusChar = gatt = null; lastStatus = ''; cfg = null;
+  cmdChar = statusChar = gatt = null; lastStatus = '';
   gattQueue = Promise.resolve();   // repartir d'une file vide à la reconnexion
-  setCfgLocked(true);          // plus de config live : Réglages en lecture seule
+  onLinkLost();
   setConn('off'); logLine('err', 'déconnecté');
+}
+// Commun BLE / Wi-Fi : plus de config live -> Réglages en lecture seule, états oubliés.
+function onLinkLost() {
+  cfg = null; statusPending = null;
+  syncGen++; cancelWaiters(); setSync('off');
+  hwInfo.clear(); abState = null;
+  setCfgLocked(true);
+  renderAutoboot(); renderPower(); buildGpioModules();
 }
 // Statut unifié : appelé par le BLE (après décodage DataView) et par le Wi-Fi (frame texte).
 // Nouveau contrat : chaque frame est un objet JSON {"id":n, ...} :
@@ -115,7 +138,9 @@ function onDisconnected() {
 function handleStatus(text) {
   logLine('in', 'STATUS ' + text);
   let m;
-  try { m = JSON.parse(text); } catch (e) { return; }   // frame non-JSON : ignorée
+  try { m = JSON.parse(text); } catch (e) { return; }   // frame non-JSON (tronquée) : ignorée, la synchro réessaie
+  if (!m || typeof m !== 'object') return;
+  settleWaiters(m);
   if (m.ev) {
     switch (m.ev) {
       case 'cfg':  onCfg(m);  return;
@@ -126,6 +151,8 @@ function handleStatus(text) {
       case 'pong': onPong(m); return;
       case 'sec':  onSec(m);  return;
       case 'name': onName(m); return;
+      case 'sys':  onSys(m);  return;
+      case 'autoboot': onAutoboot(m); return;
     }
     return;
   }
@@ -139,9 +166,106 @@ function handleStatus(text) {
     if (activeTransport && activeTransport.connected) renderConn();
   }
 }
-function onStatus(e) { handleStatus(new TextDecoder().decode(e.target.value)); }
+// Recollage des STATUS découpés par le firmware (frame plus longue que le MTU BLE
+// moins 3) : chaque morceau NON final commence par l'octet 0x1F, le dernier n'a
+// pas de préfixe. On recolle les OCTETS — un caractère UTF-8 peut être coupé
+// entre deux morceaux — puis on décode le tout.
+const STATUS_FRAG = 0x1F;
+let statusPending = null;            // octets des morceaux reçus, en attente du dernier
+function concatBytes(a, b) { const r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }
+function onStatus(e) {
+  const v = e.target.value;
+  const b = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+  if (b.length && b[0] === STATUS_FRAG) {
+    statusPending = statusPending ? concatBytes(statusPending, b.subarray(1)) : b.slice(1);
+    if (statusPending.length > 8192) statusPending = null;   // garde-fou : dernier morceau jamais reçu
+    return;
+  }
+  const all = statusPending ? concatBytes(statusPending, b) : b;
+  statusPending = null;
+  handleStatus(new TextDecoder().decode(all));
+}
 // Après toute connexion (BLE ou Wi-Fi) : lire la config pour adapter l'IHM.
-function onConnected() { send({ t:'cfg', a:'get' }, true); }
+function onConnected() { syncModule(); }
+
+// ===========================================================================
+//  Requêtes avec réponse : on attend l'événement STATUS (ev, id) qui répond.
+//  Une erreur « type » de la même carte (commande inconnue d'un firmware plus
+//  ancien) répond aussi : inutile d'attendre le délai ni de réessayer.
+// ===========================================================================
+const UNSUPPORTED = 'unsupported';
+const waiters = new Set();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function isConnected() { return !!(activeTransport && activeTransport.connected); }
+function waitEv(ev, id, ms, accept) {
+  return new Promise((resolve) => {
+    const w = { ev, id, accept, resolve };
+    w.timer = setTimeout(() => { waiters.delete(w); resolve(null); }, ms);
+    waiters.add(w);
+  });
+}
+function settleWaiters(m) {
+  for (const w of [...waiters]) {
+    if ((m.id || 0) !== w.id) continue;
+    let r;
+    if (m.ev === w.ev && (!w.accept || w.accept(m))) r = m;
+    else if (m.err === 'type') r = UNSUPPORTED;
+    else continue;
+    clearTimeout(w.timer); waiters.delete(w); w.resolve(r);
+  }
+}
+function cancelWaiters() { for (const w of waiters) { clearTimeout(w.timer); w.resolve(null); } waiters.clear(); }
+// Envoie cmd à la carte id et attend l'événement ev ; tries essais. Renvoie la
+// frame, null (pas de réponse) ou UNSUPPORTED. timeout : ms, ou fonction(essai).
+async function request(cmd, ev, id = 0, { tries = 3, timeout = 2500, accept, onTry } = {}) {
+  for (let k = 1; k <= tries; k++) {
+    if (!isConnected()) return null;
+    if (onTry && (await onTry(k)) === false) return null;
+    const p = waitEv(ev, id, typeof timeout === 'function' ? timeout(k) : timeout, accept);
+    send(cmd, true, id);
+    const r = await p;
+    if (r) return r;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+//  Synchronisation à la connexion. Un seul « cfg get » perdu laissait les
+//  Réglages « Hors connexion » alors que le lien était actif : abonnement aux
+//  notifications pas encore effectif (saisie de la passkey), MTU pas encore
+//  négocié (frame tronquée, avant le découpage côté firmware), écriture refusée
+//  pendant l'appairage… On réessaie donc avec un délai croissant, en réarmant
+//  les notifications BLE à mi-parcours, puis on lit le reste (modèle, autoboot).
+// ---------------------------------------------------------------------------
+const SYNC_TRIES = 6;
+let syncGen = 0, syncState = 'off', syncTry = 0;    // off | sync | ok | fail
+function setSync(state, k = 0) { syncState = state; syncTry = k; updateCfgOffline(); }
+async function syncModule() {
+  const gen = ++syncGen;
+  setSync('sync', 1);
+  const m = await request({ t:'cfg', a:'get' }, 'cfg', 0, {
+    tries: SYNC_TRIES,
+    timeout: (k) => 1500 + 700 * k,
+    accept: (x) => !x.saved,
+    onTry: async (k) => {
+      if (gen !== syncGen) return false;
+      setSync('sync', k);
+      if (k === 3 && activeTransport.rearm) await activeTransport.rearm();
+      return gen === syncGen;
+    },
+  });
+  if (gen !== syncGen) return;
+  if (!m || m === UNSUPPORTED) { setSync('fail'); return; }
+  setSync('ok');
+  // Facultatif (un firmware plus ancien ne répond pas) : modèle + réglages, autoboot.
+  const sys = await request({ t:'sys', a:'get' }, 'sys', 0, { tries:2, timeout:2000, accept: (x) => !x.saved });
+  if (gen !== syncGen) return;
+  if (sys === UNSUPPORTED) { hwInfo.set(0, { old:true }); renderPower(); buildGpioModules(); renderModel(); }
+  const ab = await request({ t:'autoboot', a:'get' }, 'autoboot', 0, { tries:2, timeout:2000, accept: (x) => x.on !== undefined });
+  if (gen !== syncGen) return;
+  if (ab === UNSUPPORTED) { abState = { unsupported:true }; renderAutoboot(); }
+  for (const s of (cfg && cfg.slaves) || []) if (s.up) requestSlaveHw(s.id);
+}
 
 // ===========================================================================
 //  Façade de transport : BLE (existant) + Wi-Fi (WebSocket, résolution A)
@@ -182,6 +306,15 @@ const bleTransport = {
     const data = new TextEncoder().encode(json);
     return gattWrite((ch) => ch.writeValueWithoutResponse(data));
   },
+  // Réarme l'abonnement STATUS (perdu pendant l'appairage, ou jamais effectif).
+  // Dans la file GATT : Chrome refuse deux opérations GATT simultanées.
+  rearm() {
+    const ch = statusChar; if (!ch) return Promise.resolve();
+    return gattWrite(async () => {
+      try { await ch.stopNotifications(); } catch (e) {}
+      await ch.startNotifications();
+    }).catch((e) => logLine('err', 'réarmement STATUS : ' + e.message));
+  },
 };
 const wifiTransport = {
   kind: 'wifi', ws: null, ip: null,
@@ -211,7 +344,7 @@ function wifiConnect(ip) {
   wifiTransport.ws = ws;
   ws.onopen    = () => { deviceName = 'S3-KBD (Wi-Fi)'; lastStatus = ''; setConn('on'); logLine('in', 'connecté (Wi-Fi) à ' + ip); onConnected(); };
   ws.onmessage = (e) => { if (typeof e.data === 'string') handleStatus(e.data); };
-  ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; cfg = null; setCfgLocked(true); setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
+  ws.onclose   = () => { wifiTransport.ws = null; lastStatus = ''; onLinkLost(); setConn('off'); logLine('err', 'déconnecté (Wi-Fi)'); };
   ws.onerror   = () => logLine('err', 'erreur WebSocket');
 }
 
@@ -645,26 +778,265 @@ function stepsToJson() {
     : st.kind === 'wait' ? { wait:Number(st.wait) }
     : { rep:Number(st.rep), every:Number(st.every), tap:st.tap });
 }
+// Inverse de stepsToJson (macro mémorisée -> éditeur). null si une étape n'est pas
+// représentable dans l'éditeur (ex. modificateur `m` venu d'un fichier).
+function stepsFromJson(s) {
+  if (!Array.isArray(s)) return null;
+  const out = [];
+  for (const st of s) {
+    if (!st || typeof st !== 'object' || st.m) return null;
+    if (st.wait !== undefined) out.push({ kind:'wait', wait:Number(st.wait) || 0 });
+    else if (st.rep !== undefined) out.push({ kind:'rep', rep:Number(st.rep) || 1, every:Number(st.every) || 0, tap:String(st.tap ?? '') });
+    else if (st.tap !== undefined) out.push({ kind:'tap', tap:String(st.tap) });
+    else return null;
+  }
+  return out;
+}
 function runSeq() { if (!steps.length) { toast('Séquence vide'); return; } send({ t:'seq', s:stepsToJson() }, true); }
 function stopSeq() { send({ t:'stop' }, true); }   // arrêt hors-file (reconnu exactement par le firmware)
+function saveSeqMacro() {
+  if (!steps.length) { toast('Séquence vide'); return; }
+  const nm = prompt('Nom de la macro :', 'Séquence ' + (macros.filter((x) => x.cmd.t === 'seq').length + 1));
+  if (nm === null) return;
+  const m = addMacro(nm, { t:'seq', s:stepsToJson() });
+  toast('Mémorisée : « ' + m.name + ' » (onglet Macros)');
+}
 
 // ===========================================================================
-//  Texte / macro rapide — mémorisation depuis la popup clavier (onglet Souris).
-//  💾 enregistre le texte courant ; les chips le rechargent dans la zone de saisie.
+//  Macros — bibliothèque mémorisée par CE navigateur (localStorage), sauvegarde
+//  et chargement dans un fichier JSON, autoboot programmé dans le module.
+//  Une macro = { name, cmd } : cmd est la commande envoyée telle quelle
+//  ({t:'txt',v} pour un texte, {t:'seq',s:[…]} pour une séquence ; key/char
+//  acceptés au chargement d'un fichier).
 // ===========================================================================
-const savedMacros = [];
-function saveMacro() {
-  const t = $('#passText').value.trim();
-  if (!t) { toast('Texte vide'); return; }
-  savedMacros.push(t); renderMacros(); toast('Mémorisé');
+const MACRO_KEY = 's3kbd.macros', MACRO_NAME_MAX = 24, AB_MAX = 2048;
+const MACRO_TYPES = ['txt', 'seq', 'key', 'char'];
+let macros = [];
+let abPrefs = { name:'', delay:5 };          // choix d'autoboot affiché (le module fait foi : abState)
+function loadMacros() {
+  try {
+    const o = JSON.parse(localStorage.getItem(MACRO_KEY) || 'null');
+    if (o && Array.isArray(o.macros)) macros = o.macros.filter(validMacro);
+    if (o && o.autoboot) abPrefs = { name:String(o.autoboot.name || ''), delay:clampDelay(o.autoboot.delay) };
+  } catch (e) { macros = []; }
 }
-function renderMacros() {
-  const box = $('#macroList'); box.innerHTML = '';
-  savedMacros.forEach((tx) => {
-    const c2 = document.createElement('div'); c2.className = 'chip'; c2.textContent = tx; c2.title = tx;
-    c2.addEventListener('click', () => { const ta = $('#passText'); ta.value = tx; ta.focus(); });
+function saveMacros() {
+  try { localStorage.setItem(MACRO_KEY, JSON.stringify({ v:1, macros, autoboot:abPrefs })); }
+  catch (e) { toast('Mémorisation impossible (stockage du navigateur indisponible)'); }
+}
+function clampDelay(d) { d = Math.round(Number(d)); return d >= 1 && d <= 30 ? d : 5; }
+function validMacro(m) {
+  if (!m || typeof m !== 'object' || typeof m.name !== 'string' || !m.cmd || typeof m.cmd !== 'object') return false;
+  const c = m.cmd;
+  if (!MACRO_TYPES.includes(c.t)) return false;
+  if (c.t === 'txt' || c.t === 'char') return typeof c.v === 'string' && c.v.length > 0;
+  if (c.t === 'seq') return Array.isArray(c.s) || typeof c.n === 'string';
+  return typeof c.c === 'string';
+}
+// Nom propre et unique (« Bonjour », « Bonjour (2) »…).
+function uniqueName(name, except) {
+  let base = String(name || '').trim().slice(0, MACRO_NAME_MAX) || 'Macro';
+  let nm = base, n = 2;
+  while (macros.some((x) => x !== except && x.name === nm)) nm = base.slice(0, MACRO_NAME_MAX - 5) + ' (' + (n++) + ')';
+  return nm;
+}
+function addMacro(name, cmd) {
+  const m = { name:uniqueName(name), cmd };
+  macros.push(m); saveMacros(); renderMacroPage(); renderTextChips();
+  return m;
+}
+function macroDesc(c) {
+  if (c.t === 'txt')  { const v = c.v.replace(/\s+/g, ' '); return 'Texte · « ' + (v.length > 40 ? v.slice(0, 40) + '…' : v) + ' »'; }
+  if (c.t === 'seq')  return c.n ? 'Séquence prédéfinie · ' + c.n : 'Séquence · ' + c.s.length + ' étape' + (c.s.length > 1 ? 's' : '');
+  if (c.t === 'key')  return 'Touche · ' + c.c;
+  return 'Caractère · ' + c.v;
+}
+const utf8Len = (s) => new TextEncoder().encode(s).length;
+// Exécution immédiate. Un long texte est découpé (une écriture BLE plafonne à
+// ~500 o) ; une séquence trop longue pour un envoi passe par l'autoboot « Tester ».
+async function runMacro(m) {
+  if (!isConnected()) { toast('Non connecté'); return; }
+  const c = m.cmd;
+  if (c.t === 'txt' && utf8Len(JSON.stringify(c)) > 400) {
+    for (const part of splitUtf8(c.v, 300)) send({ t:'txt', v:part }, true);
+  } else if (utf8Len(JSON.stringify(c)) > 480) {
+    toast('Macro trop longue pour un envoi direct : programmez-la en autoboot puis « Tester »');
+    return;
+  } else send(c, true);
+  toast('▶ ' + m.name);
+}
+// Découpe une chaîne en morceaux d'au plus maxBytes octets UTF-8 échappés JSON,
+// sans jamais couper un caractère (points de code entiers).
+function splitUtf8(str, maxBytes) {
+  const out = []; let cur = '', size = 0;
+  for (const ch of str) {
+    const n = utf8Len(JSON.stringify(ch)) - 2;
+    if (size + n > maxBytes && cur) { out.push(cur); cur = ''; size = 0; }
+    cur += ch; size += n;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function renameMacro(m) {
+  const nm = prompt('Nouveau nom :', m.name);
+  if (nm === null || !nm.trim()) return;
+  const old = m.name;
+  m.name = uniqueName(nm, m);
+  if (abPrefs.name === old) abPrefs.name = m.name;
+  saveMacros(); renderMacroPage(); renderTextChips();
+}
+function deleteMacro(m) {
+  if (!confirm('Supprimer la macro « ' + m.name + ' » de ce navigateur ?\n(Une copie programmée dans le module en autoboot n\'est pas effacée.)')) return;
+  macros = macros.filter((x) => x !== m);
+  saveMacros(); renderMacroPage(); renderTextChips();
+}
+function editSeqMacro(m) {
+  const st = stepsFromJson(m.cmd.s);
+  if (!st) { toast('Séquence non modifiable dans l\'éditeur (modificateurs)'); return; }
+  steps = st; renderSteps(); switchTab('fn');
+  const box = $('#seqBox'); if (box) box.scrollIntoView({ behavior:'smooth', block:'start' });
+  toast('« ' + m.name + ' » chargée dans l\'éditeur : 💾 Mémoriser pour l\'enregistrer');
+}
+function renderMacroPage() {
+  const box = $('#macroItems'); if (!box) return;
+  $('#macroCount').textContent = macros.length ? '(' + macros.length + ')' : '';
+  box.innerHTML = '';
+  if (!macros.length) box.innerHTML = '<div class="empty">Aucune macro. Mémorisez un texte (💾) ou une séquence.</div>';
+  for (const m of macros) {
+    const el = document.createElement('div'); el.className = 'scanitem macroitem';
+    const ab = abState && abState.on && abState.name === m.name;
+    el.innerHTML = `<b>${esc(m.name)}</b>${ab ? '<span class="chip state custom" title="Programmée en autoboot dans le module">⏱ autoboot</span>' : ''}` +
+      `<span class="mac">${esc(macroDesc(m.cmd))}</span>`;
+    const btn = (txt, title, cls, fn) => {
+      const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = txt; b.title = title;
+      b.addEventListener('click', fn); el.appendChild(b); return b;
+    };
+    btn('▶', 'Lancer maintenant', 'primary', () => runMacro(m)).classList.add('first');
+    if (m.cmd.t === 'seq' && Array.isArray(m.cmd.s)) btn('📝', 'Charger dans l\'éditeur de séquence', 'ghost', () => editSeqMacro(m));
+    btn('✏️', 'Renommer', 'ghost', () => renameMacro(m));
+    btn('✕', 'Supprimer', 'danger', () => deleteMacro(m));
+    box.appendChild(el);
+  }
+  renderAbSelect();
+}
+// Chips de la saisie clavier : les macros « texte », un clic recharge le texte.
+function renderTextChips() {
+  const box = $('#macroList'); if (!box) return;
+  box.innerHTML = '';
+  for (const m of macros) {
+    if (m.cmd.t !== 'txt') continue;
+    const c2 = document.createElement('div'); c2.className = 'chip'; c2.textContent = m.name; c2.title = m.cmd.v;
+    c2.addEventListener('click', () => { const ta = $('#passText'); ta.value = m.cmd.v; ta.focus(); });
     box.appendChild(c2);
-  });
+  }
+}
+// 💾 de la saisie clavier : mémorise le texte courant (nom = début du texte).
+function saveMacro() {
+  const t = $('#passText').value;
+  if (!t.trim()) { toast('Texte vide'); return; }
+  const first = t.trim().replace(/\s+/g, ' ');
+  addMacro(first.length > MACRO_NAME_MAX ? first.slice(0, MACRO_NAME_MAX - 1) + '…' : first, { t:'txt', v:t });
+  toast('Mémorisé (onglet Macros)');
+}
+
+// --- Fichier JSON : enregistrer / charger --------------------------------------
+function exportMacros() {
+  if (!macros.length) { toast('Aucune macro à enregistrer'); return; }
+  const data = { app:'S3-KBD', type:'macros', version:1, exported:new Date().toISOString(),
+                 autoboot:abPrefs.name ? { ...abPrefs } : null, macros };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 's3kbd-macros-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(macros.length + ' macro(s) enregistrée(s) dans ' + a.download);
+}
+async function importMacros(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { toast('Fichier illisible (JSON attendu)'); return; }
+  const list = Array.isArray(data) ? data : (data && Array.isArray(data.macros) ? data.macros : null);
+  if (!list) { toast('Ce fichier ne contient pas de macros S3-KBD'); return; }
+  const ok = list.filter(validMacro).map((m) => ({ name:String(m.name), cmd:m.cmd }));
+  const bad = list.length - ok.length;
+  if (!ok.length) { toast('Aucune macro valide dans ce fichier'); return; }
+  const replace = macros.length > 0 && confirm(
+    'Charger ' + ok.length + ' macro(s)' + (bad ? ' (' + bad + ' ignorée(s), invalides)' : '') + ' ?\n\n' +
+    'OK = REMPLACER vos ' + macros.length + ' macro(s) actuelle(s)\nAnnuler = les AJOUTER à la suite');
+  if (replace) macros = [];
+  for (const m of ok) macros.push({ name:uniqueName(m.name), cmd:m.cmd });
+  if (data && data.autoboot && data.autoboot.name && macros.some((x) => x.name === data.autoboot.name))
+    abPrefs = { name:data.autoboot.name, delay:clampDelay(data.autoboot.delay) };
+  saveMacros(); renderMacroPage(); renderTextChips();
+  toast(ok.length + ' macro(s) chargée(s)' + (bad ? ' · ' + bad + ' ignorée(s)' : ''));
+}
+
+// --- Autoboot : macro programmée DANS le module --------------------------------
+let abState = null;                          // dernière frame {ev:'autoboot', on, d, name, len} du module
+let abBusy = false;
+function onAutoboot(m) {
+  if (m.put !== undefined) return;           // accusé d'un morceau (attendu par uploadAutoboot)
+  if (m.run) { toast('Autoboot : « ' + (m.name || 'macro') + ' » lancée'); return; }
+  abState = m; renderAutoboot(); renderMacroPage();
+}
+function renderAbSelect() {
+  const sel = $('#abMacro'); if (!sel) return;
+  const prev = sel.value || abPrefs.name;
+  sel.innerHTML = '';
+  if (!macros.length) { const o = document.createElement('option'); o.value = ''; o.textContent = '— aucune macro —'; sel.appendChild(o); }
+  for (const m of macros) { const o = document.createElement('option'); o.value = m.name; o.textContent = m.name; sel.appendChild(o); }
+  if (prev && macros.some((x) => x.name === prev)) sel.value = prev;
+}
+function renderAutoboot() {
+  const st = $('#abState'); if (!st) return;
+  const online = isConnected() && !!cfg;
+  if (!online) st.textContent = 'module non connecté';
+  else if (!abState) st.textContent = '…';
+  else if (abState.unsupported) st.textContent = 'firmware trop ancien';
+  else st.textContent = abState.on ? '« ' + abState.name + ' » après ' + abState.d + ' s' : 'aucune macro';
+  const can = online && !!abState && !abState.unsupported && !abBusy;
+  $('#btnAbSet').disabled = !can || !macros.length;
+  $('#btnAbRun').disabled = !can || !abState.on;
+  $('#btnAbClr').disabled = !can || !abState.on;
+  $('#abDelay').value = abPrefs.delay; $('#abDelayVal').textContent = abPrefs.delay + ' s';
+}
+// Envoi en morceaux (une écriture BLE plafonne à ~500 o) : chacun est acquitté
+// par le module avant le suivant ; le dernier porte le délai et le nom, et le
+// module valide puis enregistre. Un échec reprend tout depuis le début.
+async function uploadAutoboot(m, delay) {
+  const json = JSON.stringify(m.cmd);
+  if (utf8Len(json) > AB_MAX) { toast('Macro trop longue pour l\'autoboot (2 Ko max)'); return false; }
+  const parts = splitUtf8(json, 260);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    let ok = true;
+    for (let i = 0; i < parts.length && ok; i++) {
+      const last = i === parts.length - 1;
+      const cmd = { t:'autoboot', a:'put', i, n:parts.length, c:parts[i] };
+      if (last) { cmd.d = delay; cmd.name = m.name; }
+      const r = await request(cmd, 'autoboot', 0, { tries:1, timeout:4000,
+        accept: (x) => last ? x.on !== undefined : x.put === i });
+      ok = !!r && r !== UNSUPPORTED && (!last || r.on === 1);
+    }
+    if (ok) return true;
+    if (!isConnected()) break;
+  }
+  return false;
+}
+async function setAutoboot() {
+  const m = macros.find((x) => x.name === $('#abMacro').value);
+  if (!m) { toast('Choisissez une macro'); return; }
+  const delay = clampDelay($('#abDelay').value);
+  if (!confirm('Programmer « ' + m.name + ' » en autoboot ?\nLe module la tapera tout seul ' + delay +
+               ' s après chaque démarrage, sur toute machine où il est branché.')) return;
+  abPrefs = { name:m.name, delay }; saveMacros();
+  abBusy = true; renderAutoboot();
+  const ok = await uploadAutoboot(m, delay);
+  abBusy = false; renderAutoboot(); renderMacroPage();
+  toast(ok ? 'Autoboot programmé : « ' + m.name + ' » après ' + delay + ' s' : 'Échec de la programmation de l\'autoboot');
+}
+function clearAutoboot() {
+  if (!confirm('Désactiver l\'autoboot ? La macro est effacée du module (pas de ce navigateur).')) return;
+  send({ t:'autoboot', a:'clr' }, true);
 }
 
 // ===========================================================================
@@ -673,11 +1045,12 @@ function renderMacros() {
 let cfg = null;                       // dernière config reçue (cfg:{…})
 const ROLE_NAMES = ['standard', 'maître', 'esclave'];
 // Onglet -> flag qui le rend visible. Réglages est toujours visible.
-const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb', bios:'hid_kb',
+const TAB_FLAGS = { azerty:'hid_kb', num:'hid_kb', fn:'hid_kb', bios:'hid_kb', macro:'hid_kb',
                     mouse:'hid_ms', gpio:'gpio' };
 function onCfg(m) {
   if (m.saved) { toast('Enregistré — le module redémarre, reconnectez'); return; }
   cfg = m;
+  if (syncState !== 'ok') setSync('ok');
   setCfgLocked(false);          // config live reçue : le panneau redevient actif
   renderCfg(); applyFlags(cfg);
 }
@@ -695,13 +1068,29 @@ function setCfgLocked(locked) {
   // .local = préférences de cet appareil (pas du module) : jamais verrouillées.
   sec.querySelectorAll('.cfgpage:not(.local) input, .cfgpage:not(.local) select, .cfgpage:not(.local) button')
      .forEach((el) => { el.disabled = locked; });
+  if (!locked) renderPower();                 // contrôles propres au firmware (sys) : leur propre règle
   updateCfgOffline();
 }
-// Bandeau « hors connexion » : visible tant que le panneau est verrouillé (sauf
-// sur une page .local, utilisable sans module).
+// Bandeau : visible tant que le panneau est verrouillé (sauf sur une page .local,
+// utilisable sans module). Il distingue « hors connexion », « synchronisation en
+// cours » (lien actif, config pas encore reçue) et « échec » avec Réessayer.
 function updateCfgOffline() {
   const el = $('#cfgOffline'); if (!el) return;
   el.classList.toggle('hidden', !cfgLocked || !!document.querySelector('.cfgpage.local.active'));
+  const txt = $('#cfgOfflineTxt'), retry = $('#btnCfgRetry');
+  const linked = isConnected();
+  let msg = '🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.';
+  if (linked && syncState === 'sync') msg = '⏳ Connecté — lecture de la configuration du module… (essai ' + syncTry + '/' + SYNC_TRIES + ')';
+  else if (linked && syncState === 'fail') msg = '⚠️ Connecté, mais le module ne renvoie pas sa configuration.';
+  else if (linked) msg = '⏳ Connecté — en attente de la configuration du module…';
+  if (txt) txt.textContent = msg;
+  if (retry) retry.classList.toggle('hidden', !(linked && syncState === 'fail'));
+  el.classList.toggle('busy', linked && syncState !== 'fail');
+}
+// Ouverture des Réglages connecté mais sans config (synchro échouée ou jamais
+// lancée) : on relance la lecture plutôt que d'afficher un panneau grisé.
+function ensureSynced() {
+  if (isConnected() && !cfg && syncState !== 'sync') syncModule();
 }
 function applyFlags(c) {
   for (const [tab, flag] of Object.entries(TAB_FLAGS)) {
@@ -735,6 +1124,7 @@ const MAX_SLAVES = 3;
 function renderCfg() {
   document.querySelectorAll('input[data-flag]').forEach((i) => { i.checked = !!cfg[i.dataset.flag]; });
   $('#cfgMac').textContent = cfg.mac || '–';
+  renderModel();
   $('#cfgRole').textContent = ROLE_NAMES[cfg.role] || cfg.role;
   // Modes HID actifs, en tags, sur la ligne Rôle (Clavier / Souris / COM).
   const modes = [];
@@ -763,8 +1153,84 @@ function renderCfg() {
   renderSlaves();
   renderModuleRename();
   renderSec();
+  renderPower();
+  renderAutoboot();
   buildLinkTargets();
   buildGpioModules();
+}
+
+// ===========================================================================
+//  Modèle de carte + réglages système (commande sys) : puissances BLE / Wi-Fi et
+//  fréquence CPU. Le module répond pour lui-même ; un esclave répond via le
+//  maître (sys est routé par id). Changer un réglage = enregistrer + redémarrer.
+// ===========================================================================
+const hwInfo = new Map();      // id -> frame sys {b, bn, chip, o:[], i:[], cpu, txb, txba, txw, temp} | {old:true}
+// Repli (firmware sans sys) : brochage historique de la SuperMini.
+const HW_DEFAULT = { o:[4, 5, 6, 7], i:[8, 9, 10, 11] };
+const BLE_DBM = [-24, -21, -18, -15, -12, -9, -6, -3, 0, 3, 6, 9, 12, 15, 18, 20];   // paliers du S3
+const CPU_MHZ = [80, 160, 240];
+let pwrBleAuto = true;         // la puissance BLE suit le rôle (pas de valeur fixée)
+function hwLabel(h) {
+  if (!h) return '';
+  if (h.old) return 'modèle inconnu (firmware ancien)';
+  return (h.bn || h.b || '?') + (h.chip ? ' · ' + h.chip : '');
+}
+function renderModel() {
+  const el = $('#cfgModel'); if (!el) return;
+  el.textContent = hwLabel(hwInfo.get(0)) || '–';
+}
+function onSys(m) {
+  if (m.saved) { toast('Réglages appliqués — le module redémarre, reconnectez'); return; }
+  const id = m.id || 0;
+  hwInfo.set(id, m);
+  buildGpioModules();
+  if (!id) { renderPower(); renderModel(); }
+}
+const hwPending = new Set();   // esclaves dont le modèle est en cours de lecture
+async function requestSlaveHw(id) {
+  if (hwInfo.has(id) || hwPending.has(id)) return;
+  hwPending.add(id);
+  try {
+    const r = await request({ t:'sys', a:'get' }, 'sys', id, { tries:2, timeout:3000, accept: (x) => !x.saved });
+    if (r === UNSUPPORTED) { hwInfo.set(id, { old:true }); buildGpioModules(); }
+  } finally { hwPending.delete(id); }
+}
+const fmtDbm = (v) => (v > 0 ? '+' : '') + v + ' dBm';
+function bleRoleDefault() { return cfg && cfg.role !== 0 ? 9 : 0; }
+function nearestIdx(arr, v) {
+  let best = 0;
+  arr.forEach((x, i) => { if (Math.abs(x - v) < Math.abs(arr[best] - v)) best = i; });
+  return best;
+}
+// Affiche les réglages du module (id 0). Sans frame sys : contrôles inactifs.
+function renderPower() {
+  const h = hwInfo.get(0);
+  const live = !cfgLocked && !!h && !h.old;
+  ['#pwrBle', '#pwrWifi', '#cpuMhz', '#btnPwrBleAuto', '#btnSysApply', '#btnCpuTemp'].forEach((s) => { const e = $(s); if (e) e.disabled = !live; });
+  const old = $('#pwrOld'); if (old) old.classList.toggle('hidden', !(h && h.old));
+  if (!h || h.old) { $('#cpuTemp').textContent = '– °C'; return; }
+  pwrBleAuto = !!h.txba;
+  $('#pwrBle').value = nearestIdx(BLE_DBM, h.txb);
+  $('#pwrWifi').value = h.txw;
+  $('#cpuMhz').value = Math.max(0, CPU_MHZ.indexOf(h.cpu));
+  $('#cpuTemp').textContent = (typeof h.temp === 'number' ? h.temp.toLocaleString('fr-FR', { maximumFractionDigits:1 }) : '–') + ' °C';
+  renderPowerLabels();
+}
+function renderPowerLabels() {
+  $('#pwrBleVal').textContent = fmtDbm(BLE_DBM[+$('#pwrBle').value]);
+  $('#pwrWifiVal').textContent = fmtDbm(+$('#pwrWifi').value);
+  $('#cpuVal').textContent = CPU_MHZ[+$('#cpuMhz').value] + ' MHz';
+  const mode = $('#pwrBleMode');
+  mode.textContent = pwrBleAuto ? 'auto (selon le rôle)' : 'fixée';
+  mode.className = 'chip state ' + (pwrBleAuto ? 'def' : 'custom');
+}
+function applySys() {
+  const h = hwInfo.get(0); if (!h || h.old) return;
+  const cpu = CPU_MHZ[+$('#cpuMhz').value], txw = +$('#pwrWifi').value, ble = BLE_DBM[+$('#pwrBle').value];
+  const txb = pwrBleAuto ? 'auto' : ble;
+  if (!confirm('Appliquer ?\n\nBluetooth : ' + (pwrBleAuto ? 'auto (' + fmtDbm(bleRoleDefault()) + ')' : fmtDbm(ble)) +
+               '\nWi-Fi : ' + fmtDbm(txw) + '\nProcesseur : ' + cpu + ' MHz\n\nLe module enregistre et redémarre : reconnectez ensuite.')) return;
+  send({ t:'sys', a:'set', cpu, txw, txb }, true);
 }
 
 // Onglet « Module » : ligne de renommage par carte (maître + esclaves appairés).
@@ -927,6 +1393,7 @@ function onLink(m) {
   if (m.up !== undefined)   s.up = m.up ? 1 : 0;
   if (m.rssi !== undefined) { s.rssi = m.rssi; s.up = 1; }
   renderSlaves();
+  if (s.up) requestSlaveHw(m.id);          // modèle de l'esclave (une fois) dès que son lien monte
 }
 
 // ===========================================================================
@@ -1064,13 +1531,20 @@ function renderLinkLegend(series) {
 }
 
 // ===========================================================================
-//  GPIO — sorties (bascule) et entrées (voyants). Repères LOGIQUES = table du
-//  firmware (gpio_panel.h, GPIO_TABLE) : sorties o1.., entrées i1.., numérotées
-//  à partir de 1 dans chaque sens, + BOOT (bouton intégré). `pin` = GPIO physique
-//  (câblage, info-bulle). Nouvelle broche : même ligne ici et dans GPIO_TABLE.
+//  GPIO — sorties (bascule) et entrées (voyants), SELON LE MODÈLE de chaque carte.
+//  Chaque carte annonce ses broches (frame sys : o = GPIO de o1.., i = GPIO de
+//  i1..) ; BOOT (GPIO0, bouton intégré) est présent partout. Sans réponse (ancien
+//  firmware) : brochage historique SuperMini (HW_DEFAULT). Repères LOGIQUES
+//  (o1, i1…) ; le GPIO physique s'affiche en petit (câblage).
 // ===========================================================================
-const GPIO_OUT = [ { p:'o1', pin:4 }, { p:'o2', pin:5 }, { p:'o3', pin:6 }, { p:'o4', pin:7 } ];
-const GPIO_IN  = [ { p:'BOOT', pin:0 }, { p:'i1', pin:8 }, { p:'i2', pin:9 }, { p:'i3', pin:10 }, { p:'i4', pin:11 } ];
+function gpioPins(id) {
+  const h = hwInfo.get(id);
+  const src = h && Array.isArray(h.o) && Array.isArray(h.i) ? h : HW_DEFAULT;
+  return {
+    outs: src.o.map((pin, k) => ({ p:'o' + (k + 1), pin })),
+    ins: [{ p:'BOOT', pin:0 }, ...src.i.map((pin, k) => ({ p:'i' + (k + 1), pin }))],
+  };
+}
 // Liste des cartes à afficher : maître (id 0) + esclaves appairés.
 function moduleList() {
   const mods = [{ id:0, name:(cfg && cfg.name) || 'Maître (id 0)' }];
@@ -1079,31 +1553,48 @@ function moduleList() {
 }
 // Une SECTION GPIO par module, toutes affichées ensemble. Les éléments portent
 // data-gid (id de la carte) + data-gpio (broche) → clic routé et état ciblé.
+// Reconstruite quand un modèle arrive : l'état affiché (allumé / effet) est conservé.
 function buildGpioModules() {
   const box = $('#gpioModules'); if (!box) return;
+  const prev = new Map();
+  box.querySelectorAll('[data-gid][data-gpio]').forEach((el) =>
+    prev.set(el.dataset.gid + ':' + el.dataset.gpio, [el.classList.contains('on'), el.classList.contains('fx')]));
+  const keep = (el) => {
+    const st = prev.get(el.dataset.gid + ':' + el.dataset.gpio);
+    if (st) { el.classList.toggle('on', st[0]); el.classList.toggle('fx', st[1]); }
+  };
   box.innerHTML = '';
   for (const mod of moduleList()) {
+    const { outs: pinsOut, ins: pinsIn } = gpioPins(mod.id);
     const sec = document.createElement('div'); sec.className = 'gpiomod'; sec.dataset.gid = mod.id;
-    const h = document.createElement('h3'); h.innerHTML = `<span class="dot"></span>${esc(mod.name)}`; sec.appendChild(h);
+    const model = hwLabel(hwInfo.get(mod.id));
+    const h = document.createElement('h3');
+    h.innerHTML = `<span class="dot"></span><span class="gmname">${esc(mod.name)}</span>` +
+      (model ? `<span class="hwchip">${esc(model)}</span>` : '');
+    sec.appendChild(h);
     const mkRow = (label, cells) => {
       const row = document.createElement('div'); row.className = 'gpiorow';
       row.innerHTML = `<span class="gpiolabel">${label}</span>`;
       const cl = document.createElement('div'); cl.className = 'cluster';
       cells.forEach((c) => cl.appendChild(c)); row.appendChild(cl); return row;
     };
-    const outs = GPIO_OUT.map(({ p, pin }) => {
+    const outs = pinsOut.map(({ p, pin }) => {
       const el = document.createElement('div'); el.className = 'key nav gpio';
-      el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
+      el.dataset.gid = mod.id; el.dataset.gpio = p;
+      el.innerHTML = `${p}<small class="gpn">GPIO ${pin}</small>`;
       el.title = `${p} = GPIO ${pin} · clic : basculer · appui long : clignotement ou PWM`;
       bindLongPress(el,
         () => openGpioFx(mod, p, el),                                        // appui long
         () => { flash(el); send({ t:'gpio', p, a:'tgl' }, false, mod.id); }); // clic : bascule
+      keep(el);
       return el;
     });
-    const ins = GPIO_IN.map(({ p, pin }) => {
+    const ins = pinsIn.map(({ p, pin }) => {
       const el = document.createElement('span'); el.className = 'chip led';
-      el.dataset.gid = mod.id; el.dataset.gpio = p; el.textContent = p;
+      el.dataset.gid = mod.id; el.dataset.gpio = p;
+      el.innerHTML = `${p} <small class="gpn">${pin}</small>`;
       el.title = p === 'BOOT' ? 'BOOT = bouton intégré (GPIO 0)' : `${p} = GPIO ${pin} (pull-up, actif bas)`;
+      keep(el);
       return el;
     });
     sec.appendChild(mkRow('Sorties', outs));
@@ -1332,6 +1823,7 @@ function switchTab(name) {
   document.querySelectorAll('.tabpage').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + name));
   $('#btnCfg').classList.toggle('active', name === 'cfg');   // Réglages = icône de l'en-tête, pas un onglet
   if (name === 'gpio' && activeTransport && activeTransport.connected) readGpio();   // état réel à l'ouverture
+  if (name === 'cfg') ensureSynced();                        // connecté sans config : relire
 }
 // Bascule Réglages <-> dernier onglet visité.
 let lastTab = 'mouse';
@@ -1427,8 +1919,33 @@ function wireUI() {
 
   $('#btnMacroSave').addEventListener('click', saveMacro);
 
+  // Macros : fichier JSON + autoboot
+  $('#btnMacroExport').addEventListener('click', exportMacros);
+  $('#btnMacroImport').addEventListener('click', () => $('#macroFile').click());
+  $('#macroFile').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) importMacros(f);
+    e.target.value = '';                       // recharger le même fichier redéclenche change
+  });
+  $('#abDelay').addEventListener('input', () => { $('#abDelayVal').textContent = $('#abDelay').value + ' s'; });
+  $('#btnAbSet').addEventListener('click', setAutoboot);
+  $('#btnAbRun').addEventListener('click', () => send({ t:'autoboot', a:'run' }, true));
+  $('#btnAbClr').addEventListener('click', clearAutoboot);
+
+  // Puissances + CPU (Réglages > Sécurité)
+  $('#pwrBle').addEventListener('input', () => { pwrBleAuto = false; renderPowerLabels(); });
+  $('#btnPwrBleAuto').addEventListener('click', () => {
+    pwrBleAuto = true; $('#pwrBle').value = BLE_DBM.indexOf(bleRoleDefault()); renderPowerLabels();
+  });
+  $('#pwrWifi').addEventListener('input', renderPowerLabels);
+  $('#cpuMhz').addEventListener('input', renderPowerLabels);
+  $('#btnSysApply').addEventListener('click', applySys);
+  $('#btnCpuTemp').addEventListener('click', () => send({ t:'sys', a:'get' }, true));
+  $('#btnCfgRetry').addEventListener('click', syncModule);
+
   document.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => addStep(b.dataset.add)));
   $('#btnSeqPreset').addEventListener('click', presetDemo);
+  $('#btnSeqSave').addEventListener('click', saveSeqMacro);
   $('#btnSeqRun').addEventListener('click', runSeq);
   $('#btnSeqStop').addEventListener('click', stopSeq);
   $('#stepList').addEventListener('input', (e) => {
@@ -1510,6 +2027,10 @@ function init() {
     buildBios();
     buildGpioModules();
     renderSteps();
+    loadMacros();
+    renderMacroPage();
+    renderTextChips();
+    renderAutoboot();
     refreshMods();
     initMouse();
     initTextPass();

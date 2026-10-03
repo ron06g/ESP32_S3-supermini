@@ -16,7 +16,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="S3-KBD" />
 
-  <link rel="stylesheet" href="style.css?v=26" />
+  <link rel="stylesheet" href="style.css?v=27" />
 </head>
 <body>
 <div class="app">
@@ -44,6 +44,7 @@
     <button class="tab" data-tab="num"><span class="ti">🔢</span><span class="tl">Num</span></button>
     <button class="tab" data-tab="fn"><span class="ti">🎛️</span><span class="tl">Fn/Média</span></button>
     <button class="tab" data-tab="bios"><span class="ti">🖥️</span><span class="tl">Bios</span></button>
+    <button class="tab" data-tab="macro"><span class="ti">💾</span><span class="tl">Macros</span></button>
     <button class="tab" data-tab="gpio"><span class="ti">🔌</span><span class="tl">GPIO</span></button>
   </nav>
 
@@ -65,9 +66,49 @@
           <button class="btn ghost" data-add="rep">+ Répétition</button>
           <div class="spacer"></div>
           <button id="btnSeqPreset" class="btn ghost">Préréglage démo</button>
+          <button id="btnSeqSave" class="btn ghost" title="Mémoriser la séquence dans l'onglet Macros">💾 Mémoriser</button>
           <button id="btnSeqStop" class="btn danger">Stop</button>
           <button id="btnSeqRun" class="btn primary">Lancer</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Macros : bibliothèque (mémorisée par ce navigateur), fichier JSON, autoboot du module -->
+    <section id="tab-macro" class="tabpage scrollpage">
+      <div class="cfgblock">
+        <h3>Mes macros <span id="macroCount" class="count"></span></h3>
+        <div id="macroItems" class="scanlist"></div>
+        <div class="hint">Créez une macro avec <b>💾</b> dans la saisie clavier (texte) ou <b>💾 Mémoriser</b> sous la
+          séquence (onglet Fn/Média). Elles sont gardées par ce navigateur : enregistrez-les dans un fichier pour
+          les retrouver sur un autre téléphone ou ordinateur.</div>
+      </div>
+
+      <div class="cfgblock">
+        <h3>Enregistrer / charger</h3>
+        <div class="row wrap">
+          <button id="btnMacroExport" class="btn primary">💾 Enregistrer dans un fichier</button>
+          <button id="btnMacroImport" class="btn">📂 Charger un fichier</button>
+          <input id="macroFile" type="file" accept=".json,application/json" class="hidden">
+        </div>
+        <div class="hint">Fichier JSON (<code>s3kbd-macros-AAAA-MM-JJ.json</code>) : toutes les macros + le choix d'autoboot.
+          Au chargement, vous choisissez de <b>remplacer</b> vos macros ou de les <b>ajouter</b>.</div>
+      </div>
+
+      <div class="cfgblock">
+        <h3>Lancement automatique au démarrage (autoboot)</h3>
+        <div class="kv"><span>Programmé dans le module</span><b id="abState">–</b></div>
+        <div class="row wrap">
+          <label>Macro <select id="abMacro"></select></label>
+        </div>
+        <label class="sens">Délai <input id="abDelay" type="range" min="1" max="30" step="1" value="5"><span id="abDelayVal" class="fxval">5 s</span></label>
+        <div class="row wrap">
+          <button id="btnAbSet" class="btn primary">Programmer le module</button>
+          <button id="btnAbRun" class="btn">Tester maintenant</button>
+          <button id="btnAbClr" class="btn danger">Désactiver</button>
+        </div>
+        <div class="hint">La macro est copiée <b>dans le module</b> : à chaque démarrage, il la tape tout seul, sans
+          téléphone, le délai écoulé après que la machine a reconnu le clavier USB. ⚠️ Elle s'exécute sur
+          <b>toute machine</b> où le module est branché ; « Stop » l'interrompt. Taille max : 2 Ko.</div>
       </div>
     </section>
 
@@ -92,9 +133,10 @@
     <section id="tab-gpio" class="tabpage scrollpage">
       <div class="row wrap" style="margin-bottom:8px">
         <button id="btnGpioRead" class="btn ghost">Relire tout</button>
-        <span class="hint">Une section par carte (maître + esclaves), tout sur le même écran. Sorties <b>o1…o4</b> = bascule au clic,
-          <b>appui long = clignotement ou PWM</b> exécuté par la carte ; entrées <b>i1…i4</b> = voyants (pull-up, actif bas) ;
-          BOOT = bouton intégré. Le GPIO physique de chaque repère s'affiche au survol.</span>
+        <span class="hint">Une section par carte (maître + esclaves), selon son <b>modèle</b> (détecté par la carte :
+          SuperMini o1…o4 / i1…i4, DevKit o1…o8 / i1…i8). Sorties = bascule au clic,
+          <b>appui long = clignotement ou PWM</b> exécuté par la carte ; entrées = voyants (pull-up, actif bas) ;
+          BOOT = bouton intégré. Le petit chiffre = GPIO physique à câbler.</span>
       </div>
       <div id="gpioModules"></div>
     </section>
@@ -109,13 +151,15 @@
         <button class="subtab" data-sub="device"><span class="ti">📱</span><span class="tl">Appareil</span></button>
       </nav>
 
-      <div id="cfgOffline" class="cfg-offline hidden">🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.</div>
+      <div id="cfgOffline" class="cfg-offline hidden"><span id="cfgOfflineTxt">🔌 Hors connexion — réglages en lecture seule. Connectez un module pour les consulter et les modifier.</span>
+        <button id="btnCfgRetry" class="btn ghost hidden">↻ Réessayer</button></div>
 
       <div class="cfgpages">
         <!-- ---- Sous-onglet : Module ---- -->
         <div class="cfgpage active" data-subpage="module">
           <div class="cfgblock">
             <h3>Informations</h3>
+            <div class="kv"><span>Modèle</span><b id="cfgModel">–</b></div>
             <div class="kv"><span>MAC BLE</span><b id="cfgMac">–</b></div>
             <div class="kv"><span>Rôle</span><span class="roleval"><b id="cfgRole">–</b><span id="cfgModes" class="modetags"></span></span></div>
             <div class="kv"><span>Module appairé</span><b id="cfgPeer">–</b></div>
@@ -153,6 +197,14 @@
                 modules</b> (esclaves) — c'est requis pour pouvoir changer la passkey. <b>2)</b> changez la passkey : le module
                 efface ses bonds et <b>redémarre</b>. <b>3)</b> « oubliez » le module dans les réglages Bluetooth du téléphone.
                 <b>4)</b> une fois reconnecté, refaites l'appairage en <b>respectant l'ordre</b>.</div>
+              <label class="sens pwr">Puissance <input id="pwrBle" type="range" min="0" max="15" step="1" value="8"><span id="pwrBleVal" class="fxval">0 dBm</span></label>
+              <div class="row wrap pwrrow">
+                <span id="pwrBleMode" class="chip state def">auto</span>
+                <button id="btnPwrBleAuto" class="btn ghost">Auto (selon le rôle)</button>
+              </div>
+              <div class="hint">Portée du Bluetooth (téléphone et liens maître ↔ esclaves), de −24 à +20 dBm.
+                <b>Auto</b> : 0 dBm en standard, +9 dBm appairé. Plus fort = plus de portée, mais plus de
+                consommation, de chaleur et de surface d'attaque.</div>
             </div>
 
             <hr class="sep">
@@ -165,6 +217,28 @@
                 <button id="btnSecWifi" class="btn primary">Changer le Wi-Fi</button>
               </div>
               <div class="hint">Modifier le mot de passe de la connexion Wifi.</div>
+              <label class="sens pwr">Puissance <input id="pwrWifi" type="range" min="2" max="20" step="1" value="11"><span id="pwrWifiVal" class="fxval">11 dBm</span></label>
+              <div class="hint">Portée du point d'accès, de 2 à 20 dBm (défaut 11 dBm : téléphone à quelques mètres).
+                La radio Wi-Fi est la principale source de chaleur du module.</div>
+            </div>
+
+            <hr class="sep">
+
+            <!-- ---- Processeur ---- -->
+            <div class="secgroup">
+              <div class="sechead"><h4>Processeur (CPU)</h4>
+                <span id="cpuTemp" class="chip state" title="Capteur interne de la puce, relevé à la connexion">– °C</span>
+                <button id="btnCpuTemp" class="btn ghost icon" title="Relire la température">↻</button></div>
+              <label class="sens pwr">Fréquence <input id="cpuMhz" type="range" min="0" max="2" step="1" value="1"><span id="cpuVal" class="fxval">160 MHz</span></label>
+              <div class="hint"><b>80 MHz</b> : le plus sobre et le plus froid · <b>160 MHz</b> (défaut) : large pour cet usage ·
+                <b>240 MHz</b> : maximum. En dessous de 80 MHz, la radio et l'USB ne fonctionnent plus.</div>
+            </div>
+
+            <div id="pwrOld" class="hint warn hidden">Firmware du module trop ancien : réglages de puissance et de CPU indisponibles.</div>
+            <div class="row">
+              <span class="hint">Puissances et fréquence s'appliquent au <b>redémarrage</b> du module : reconnectez ensuite.</span>
+              <div class="spacer"></div>
+              <button id="btnSysApply" class="btn primary">Appliquer &amp; redémarrer</button>
             </div>
           </div>
         </div>
@@ -331,7 +405,7 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="app.js?v=26"></script>
-<script src="pwa.js?v=26"></script>
+<script src="app.js?v=27"></script>
+<script src="pwa.js?v=27"></script>
 </body>
 </html>
