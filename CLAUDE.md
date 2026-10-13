@@ -346,6 +346,49 @@ lit toutes les cartes. Les broches de chaque section viennent du **modèle** de 
 (`hwInfo`, frame `sys` ; en-tête = nom + modèle, GPIO physique sous chaque repère) — l'état
 affiché est conservé quand la section est reconstruite. `WEB/index.html` redirige vers `Keyboard/`.
 
+## Second firmware : lecteur de Carte Vitale (`S3/pcsc_firmware/`)
+
+**Sans rapport avec le firmware HID** : aucun code partagé, ni BLE ni Wi-Fi (jamais
+initialisés), CPU 80 MHz. Il est dédié à la **N8R2** :
+
+- prise « USB » = **USB Host** (lecteur CCID « PC/SC » via un adaptateur OTG, **VBUS à
+  fournir** : cavalier « USB-OTG », câble en Y ou hub alimenté) ;
+- prise « COM » (CH343, UART0) = port protocole texte `<STX>…<CR><LF><EOT>` à 115200,
+  et flash.
+
+Il lit les données publiques d'une **Carte Vitale 2** (séquence Cardpeek `vitale_2.lua` :
+AID `D250000002 'VITALE'`, pointeurs EF 2001, BER-TLV `65`). La carte est **coupée après
+chaque lecture** ; la **LED WS2812** (GPIO48, `status_led.h`) suit l'état (bleu = démarrage,
+vert respirant = lecteur prêt, rouge = pas de lecteur / erreur carte, violet = pas une Vitale…,
+tableau dans le README).
+
+- **Événements** : `CARD READER v1.0`, `READER_OK`/`KO`, `CARD_IN`/`OUT`,
+  `CARD_READ:…`/`CARD_READ_ERROR`/`CARD_READ_NOT_CV:<code>`.
+- **Commandes** : `RESTART` (ré-énumère le lecteur USB, pas l'ESP32), `IS_READER`,
+  `IS_CARD`, `READ_CARD` (relecture forcée), `CARD_STATE` (cache), `INFO` (diagnostic).
+- Doc complète du protocole : `S3/pcsc_firmware/README.md`.
+
+Build et flash :
+
+- FQBN `esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,CPUFreq=80,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=disabled,DebugLevel=none`.
+  `USB.begin()` n'est jamais appelé, ce qui laisse l'OTG libre pour `usb_host_install()`.
+- Compilation : `S3\pcsc_firmware_compile.bat` → `S3\firmware\pcsc_firmware_vYYMM.dd\`.
+- Flash : `S3\pcsc_firmware_flash.bat [COMx]`. Il ne détecte que les ponts USB-série
+  (VID 1A86/10C4/0403), **jamais** les modules Espressif 303A.
+- Test : `python S3/pcsc_firmware/tools/pcsc_term.py COMx [commandes]`. Le port est ouvert
+  DTR/RTS inactifs : les basculer redémarre l'ESP32.
+
+Invariants :
+
+- la tâche `ccid` est **seule propriétaire du lecteur** ;
+- les callbacks USB ne font que poster ou libérer un sémaphore ;
+- deux files distinctes, `g_usbEvtQueue` (USB) et `g_cmdQueue` (COM) : un flot de
+  commandes ne peut pas évincer un débranchement ;
+- la LED n'est jamais pilotée directement : `ledSet(état)` / `ledFlash()` ;
+- les échanges bulk sont synchrones et jamais laissés en vol (annulation halt → flush → clear) ;
+- un IN d'un MPS d'abord, puis le reste (pas d'attente de ZLP) ;
+- les logs IDF sont coupés (UART0 = protocole).
+
 ## Références
 
 Les cahiers des charges sont dans `ressources/` : `cahier-des-charges_1.md`
