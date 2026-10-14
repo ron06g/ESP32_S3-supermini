@@ -19,6 +19,9 @@ build/
 *.hex
 sdkconfig.old
 
+# --- Executable PyInstaller (S3/pcsc_firmware/tools/build_exe.bat) ---
+dist/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
