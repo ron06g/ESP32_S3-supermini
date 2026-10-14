@@ -95,6 +95,7 @@ static void diagStep(const char* s) {
 #include "usb_ccid.h"
 #include "apdu_t0.h"
 #include "vitale.h"
+#include "cartes.h"
 
 // --- Etat du lecteur / de la carte (tache ccid uniquement) ------------------
 static bool     g_readerOk   = false;   // lecteur CCID utilisable attache

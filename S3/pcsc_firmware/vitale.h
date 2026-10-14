@@ -16,7 +16,8 @@
 //
 //  Resultat (une trame) :
 //    CARD_READ:NOM=..;PRENOM=..;NAISS=AAAAMMJJ;NIR=..[;NAT=..]|NOM=..   (un groupe par beneficiaire)
-//    CARD_READ_NOT_CV:<code>   V1 | T1 | SW hexa du SELECT de l'AID refuse (ex. 6A82)
+//    CARD_READ_NOT_CV:<code>   V1 | T1 | CB / CPS / OPENPGP / PIV / ID (+ ;CLE=valeur, cartes.h)
+//                              | sinon SW hexa du SELECT de l'AID Vitale refuse (ex. 6A82)
 //    CARD_READ_ERROR           carte muette, echange en echec, aucun beneficiaire
 // ===========================================================================
 #pragma once
@@ -187,6 +188,10 @@ static uint16_t selectAid(const uint8_t* aid, uint8_t n) {
   return apduTransmit(c, 5 + n, g_apduData, sizeof(g_apduData), &l);
 }
 
+// Identification des autres cartes (CB, CPS, OpenPGP, PIV, ID) : cartes.h,
+// inclus apres ce fichier. 1 = reconnue (trame ecrite), 0 = inconnue, -1 = perdue.
+static int cardIdentify(char* out, size_t max);
+
 static uint16_t selectFid(uint16_t fid) {
   const uint8_t c[7] = { 0x00, 0xA4, 0x02, 0x00, 0x02, (uint8_t)(fid >> 8), (uint8_t)fid };
   size_t l;
@@ -325,7 +330,9 @@ static int vitaleRead(char* out, size_t max) {
   if (sw == 0) { diagStep("SELAID"); return VIT_ERROR; }
   if (sw != 0x9000) {
     dbg("VITALE : application Vitale absente (SW %04X) -> pas une Carte Vitale 2", sw);
-    snprintf(out, max, "CARD_READ_NOT_CV:%04X", sw);
+    int id = cardIdentify(out, max);
+    if (id < 0) { diagStep("IDENT"); snprintf(out, max, "CARD_READ_ERROR"); return VIT_ERROR; }
+    if (id == 0) snprintf(out, max, "CARD_READ_NOT_CV:%04X", sw);
     return VIT_NOT_CV;
   }
   dbg("VITALE : application Vitale selectionnee");

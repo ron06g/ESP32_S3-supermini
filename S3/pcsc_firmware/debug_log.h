@@ -32,6 +32,7 @@
 
 static volatile bool g_debug    = false;
 static volatile bool g_dbgQuiet = false;   // tait le detail des echanges de scrutation (250 ms)
+static volatile bool g_dbgMask  = false;   // masque les REPONSES (APDU< / CCID<) : lectures EMV (PAN, piste 2)
 
 // Journal formate (printf). Sans effet hors mode DEBUG.
 static void dbg(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -54,6 +55,11 @@ static void dbgHex(const char* tag, const uint8_t* d, size_t n) {
   uint32_t t = millis();
   int k = snprintf(line, sizeof(line), "DBG:%lu.%03lu %s [%u] ", (unsigned long)(t / 1000),
                    (unsigned long)(t % 1000), tag, (unsigned)n);
+  if (g_dbgMask && strchr(tag, '<')) {             // reponse d'une lecture EMV : jamais en clair
+    snprintf(line + k, sizeof(line) - k, "(masque : donnees bancaires)");
+    comSend(line);
+    return;
+  }
   size_t shown = n > DBG_HEX_MAX ? DBG_HEX_MAX : n;
   for (size_t i = 0; i < shown && k + 3 < (int)sizeof(line); ++i)
     k += snprintf(line + k, sizeof(line) - k, "%02X", d[i]);
