@@ -102,15 +102,55 @@ Commandes et réponses attendues :
    donnait des erreurs de parité. `SetParameters` reprend maintenant le Fi/Di de TA1.
    Détail dans [recette.md](recette.md).
 4. **Documentation** regroupée dans `S3\pcsc_firmware\` (`README.md` + `doc/`), à la
-   demande de l'utilisateur.
+   demande de l'utilisateur. Commits `4179dd9` et `82b9161`.
+5. **Terminal graphique** (`tools/pcsc_term.py`), à la demande de l'utilisateur.
+   Demande : « app graphique autonome (compilable en exe) avec une fenêtre Windows,
+   des boutons pour ouvrir le port COM et lancer toutes les commandes, une fenêtre de
+   terminal, et une petite fenêtre latérale avec une représentation du lecteur
+   (OFF, ON, carte à l'intérieur, pas de carte, Carte Vitale lue ou en erreur) »,
+   puis « une interface graphique améliorée ».
+   - Choix : tkinter avec un thème sombre fait main, sans dépendance de plus que
+     pyserial, et un exe de 12 Mo construit par PyInstaller (`build_exe.bat`).
+   - Ajouts :
+     - mode démo (module simulé) ;
+     - auto-test avec captures ;
+     - LED déduite du module ;
+     - onglets Données / Lecteur USB ;
+     - mode ligne de commande conservé.
+   - Validé en démo et sur le module réel (COM12). C'est à cette occasion que le
+     CLOUD 2700 R a été vu en service, au niveau TPDU.
+6. **Code `CB`**, à la demande de l'utilisateur : « indique le type de carte en CB pour
+   les cartes bancaires ». `CARD_READ_NOT_CV:CB` remplace le SW (`6A82`) quand la
+   carte est une carte de paiement EMV. On la reconnaît par l'annuaire
+   `1PAY.SYS.DDF01` ou par les AID CB / Visa / Mastercard / Maestro / Amex, en
+   lecture seule. Le terminal graphique affiche « Carte bancaire » avec un badge `CB`.
+7. **Types de carte approfondis**, à la demande de l'utilisateur : « approfondis le type
+   CB (Visa / Mastercard) et CPS, ID, OPENPGP / PIV ; si on peut lire le nom du porteur,
+   ce serait encore mieux », « je ne cherche que des infos publiques, mais l'identité du
+   porteur ou d'un établissement peut être utile », « le numéro de carte peut être
+   utile aussi ».
+   - Nouveau module `cartes.h`. La trame devient
+     `CARD_READ_NOT_CV:<TYPE>;CLÉ=valeur…`.
+   - Données publiques lues par type :
+     - CB : réseaux, libellé, titulaire et **numéro masqué** (6 + 4, choix PCI DSS :
+       le numéro complet avec sa date permettrait de copier la carte) ;
+     - CPS : identité, établissement, identifiant et profession tirés du certificat ;
+     - OpenPGP : nom et numéro de série ;
+     - PIV : certificat et GUID ;
+     - ID : reconnaissance seule (BAC / PACE ; CNIe et passeport français sont sans
+       contact).
+   - Le journal DEBUG masque les réponses EMV.
+   - Terminal graphique : champs affichés par type, nouvelles cartes simulées.
 
 ## Points ouverts
 
 - **Valider la lecture d'une Carte Vitale 2** : la carte de l'utilisateur est une
   Vitale 1.
 - Transfert **Base64** des données brutes de la carte (étape suivante prévue).
+- Valider sur de vraies cartes : CB (titulaire, numéro masqué), CPS, OpenPGP, PIV.
+- Protocole T=1 en niveau TPDU : nécessaire pour les cartes T=1 seulement (beaucoup de
+  cartes OpenPGP) sur les deux lecteurs actuels.
 - Vitale 1 : lecture impossible sans la documentation du GIE SESAM-Vitale.
-- Tester l'Identiv CLOUD 2700 R.
 - Identifier ce qui empêchait la détection au premier essai (alimentation ?
   câble ? adaptateur ?).
 - Accélération possible : PPS en mode négociable (Fi/Di de TA1), si la durée de

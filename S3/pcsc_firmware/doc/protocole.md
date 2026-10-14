@@ -77,11 +77,75 @@ Le même format sert dans les deux sens.
 | `CARD_READ:NOM=…;PRENOM=…;NAISS=AAAAMMJJ;NIR=…` | Carte Vitale 2 lue. Un groupe par bénéficiaire, séparés par `\|` ; `;NAT=…` en plus si la nationalité est présente. Format **provisoire** : un transfert Base64 des données brutes est prévu |
 | `CARD_READ_NOT_CV:V1` | Carte Vitale 1 (ATR `3F 65 25 …`) : reconnue, **non lue** (format propriétaire Bull B0', non documenté publiquement) |
 | `CARD_READ_NOT_CV:T1` | carte uniquement T=1 sur un lecteur de niveau TPDU (une Vitale est en T=0) |
-| `CARD_READ_NOT_CV:<SW>` | la carte refuse le `SELECT` de l'application Vitale, p. ex. `6A82` (carte bancaire) |
+| `CARD_READ_NOT_CV:CB;…` | **carte bancaire** (EMV) : réseaux, libellé, titulaire, numéro **masqué** |
+| `CARD_READ_NOT_CV:CPS;…` | **Carte de Professionnel de Santé** : identité, établissement, identifiant, profession (certificat) |
+| `CARD_READ_NOT_CV:OPENPGP;…` | **carte OpenPGP** : nom du porteur, numéro de série |
+| `CARD_READ_NOT_CV:PIV;…` | **carte PIV** : titulaire et établissement (certificat), GUID |
+| `CARD_READ_NOT_CV:ID` | **document d'identité** à puce (ICAO) : reconnu seulement, données protégées |
+| `CARD_READ_NOT_CV:<SW>` | autre carte : elle refuse le `SELECT` de l'application Vitale, p. ex. `6A82` |
 | `CARD_READ_ERROR` | carte muette, échange en échec, carte retirée pendant la lecture, ou application Vitale sans bénéficiaire lisible |
 | `NO_CARD` | (réponse à `READ_CARD` / `CARD_STATE`) aucune carte |
 
-Les valeurs ne contiennent jamais `;`, `=` ni `|` : ces caractères sont remplacés par `?`.
+Les valeurs ne contiennent jamais `;`, `=` ni `|` : ces caractères sont remplacés
+par `?` ou par une espace.
+
+### Cartes reconnues autres que la Vitale
+
+La trame `CARD_READ_NOT_CV` commence toujours par le **type**, puis donne les champs
+connus sous la forme `;CLÉ=valeur`. Un hôte qui ne lit que le code avant le
+premier `;` reste compatible.
+
+```
+CARD_READ_NOT_CV:CB;RESEAU=CB+VISA;LIBELLE=VISA DEBIT;NOM=MARTIN;PRENOM=CAMILLE;NUM=497010******1234
+CARD_READ_NOT_CV:CPS;NOM=DURAND;PRENOM=ALICE;ETAB=CABINET MEDICAL;IDENT=810000000000;PROFESSION=MEDECIN
+CARD_READ_NOT_CV:OPENPGP;NOM=MARTIN;PRENOM=CAMILLE;NUM=0005-0000ABCD
+CARD_READ_NOT_CV:PIV;TITULAIRE=CAMILLE MARTIN;ETAB=DEMO CORP;NUM=0123456789ABCDEF0123456789ABCDEF
+CARD_READ_NOT_CV:ID
+```
+
+(Exemples fictifs.)
+
+| Champ | Contenu | Cartes |
+|---|---|---|
+| `RESEAU` | réseaux de paiement présents, séparés par `+` : `CB`, `VISA`, `VISA ELECTRON`, `V PAY`, `MASTERCARD`, `MAESTRO`, `AMEX`, `DISCOVER`, `JCB`, `UNIONPAY`, sinon `EMV` | CB |
+| `LIBELLE` | libellé de l'application (« VISA DEBIT », nom de la banque…) | CB |
+| `NOM`, `PRENOM` | nom et prénom du porteur, si la carte les sépare | CB, CPS, OPENPGP, PIV |
+| `TITULAIRE` | nom complet en un seul champ (nom commun du certificat, ou nom EMV sans séparateur) | CB, CPS, OPENPGP, PIV |
+| `ETAB` | établissement / organisation (champ `O` du certificat) | CPS, PIV |
+| `IDENT` | identifiant du porteur (champ `serialNumber` du certificat, p. ex. RPPS / ADELI) | CPS |
+| `PROFESSION` | profession / titre (champ `title` du certificat) | CPS |
+| `NUM` | numéro de la carte | voir ci-dessous |
+
+Le numéro (`NUM`) selon la carte :
+
+| Carte | Numéro |
+|---|---|
+| CB | **masqué** : 6 premiers et 4 derniers chiffres |
+| OPENPGP | fabricant + numéro de série |
+| PIV | GUID |
+
+Un champ absent de la carte n'apparaît pas.
+
+**Uniquement des données publiques**, lisibles sans code PIN ni clé, en lecture seule :
+
+- **CB** :
+  - le module fait ce que fait tout terminal pour lire la carte
+    (`GET PROCESSING OPTIONS` + `READ RECORD`). Il n'y a **ni paiement, ni code PIN** ;
+    le compteur de transactions de la carte (ATC) avance de 1 ;
+  - le numéro n'est **jamais** émis en entier, ni la date d'expiration. Un numéro
+    complet avec sa date permettrait de copier la carte ; le masquage 6 + 4 est celui
+    des tickets de caisse (PCI DSS) ;
+  - beaucoup de cartes récentes n'enregistrent plus le nom du titulaire, ou un nom
+    générique (« CARDHOLDER ») : le champ est alors absent ;
+  - en mode DEBUG, les réponses de ces lectures sont **masquées**.
+- **CPS** : reconnue par son ATR. L'identité vient du premier certificat lisible de la
+  structure PKCS#15 (sujet X.509).
+- **ID** : le nom est protégé par BAC/PACE, une clé tirée de la bande MRZ du document.
+  La **CNIe et le passeport français sont sans contact** : un lecteur à contact ne les
+  voit pas du tout.
+- **Limite des lecteurs TPDU** (Gemalto, CLOUD 2700 R) : une carte qui ne parle que
+  le protocole T=1, comme beaucoup de cartes OpenPGP, donne `NOT_CV:T1` avant toute
+  identification.
 
 ## `INFO` (diagnostic)
 
@@ -176,22 +240,10 @@ python S3\pcsc_firmware\tools\pcsc_term.py COMx --listen 300 --log debug.txt "DE
 
 Des exemples réels sont dans [journaux/](journaux/).
 
-## Outil de test `tools/pcsc_term.py`
+## Outil `tools/pcsc_term.py`
 
-Il faut pyserial (`pip install pyserial`).
+Application graphique (et exe autonome) pour ouvrir le port, lancer toutes les
+commandes, suivre les trames et voir l'état du lecteur. Elle a aussi un mode démo
+sans matériel et un mode ligne de commande pour les scripts.
 
-```bat
-python S3\pcsc_firmware\tools\pcsc_term.py COMx                      REM interactif
-python S3\pcsc_firmware\tools\pcsc_term.py COMx IS_READER IS_CARD INFO
-python S3\pcsc_firmware\tools\pcsc_term.py COMx --wait 8 READ_CARD
-python S3\pcsc_firmware\tools\pcsc_term.py COMx --listen 300 --log debug.txt "DEBUG ON"
-```
-
-- Affichage :
-  - `>>` : commande envoyée (tramée) ;
-  - `<<` : trame reçue ;
-  - `~~` : octets hors trame (log ROM).
-- `--wait S` : attente après chaque commande (3 s par défaut).
-- `--listen N` : rester à l'écoute N secondes après les commandes.
-- `--log fichier` : ajouter chaque ligne au fichier.
-- Le port est ouvert DTR/RTS inactifs : pas de reset de l'ESP32.
+Tout est décrit dans [terminal.md](terminal.md).

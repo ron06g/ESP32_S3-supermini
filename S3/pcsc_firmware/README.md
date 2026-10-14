@@ -26,8 +26,26 @@ faisabilité** : le transfert Base64 des données brutes viendra ensuite.
 ## Démarrage rapide
 
 ```bat
-S3\pcsc_firmware_compile.bat                                   REM compile -> S3\firmware\pcsc_firmware_vYYMM.dd\
-S3\pcsc_firmware_flash.bat COM12                               REM flashe la derniere version
+S3\pcsc_firmware_compile.bat                REM compile -> S3\firmware\pcsc_firmware_vYYMM.dd\
+S3\pcsc_firmware_flash.bat COM12            REM flashe la derniere version
+S3\pcsc_firmware\tools\build_exe.bat       REM construit tools\dist\pcsc_term.exe
+```
+
+**Terminal graphique** `pcsc_term.exe` (ou `python tools\pcsc_term.py`) :
+- choix du port COM ;
+- une tuile par commande ;
+- terminal coloré des trames ;
+- dessin animé du lecteur et de la carte ;
+- données décodées.
+
+`--demo` simule le module, pour essayer l'interface sans matériel. Voir
+[doc/terminal.md](doc/terminal.md).
+
+![Terminal graphique (mode démo, données fictives)](doc/images/terminal_demo_vitale_lue.png)
+
+En ligne de commande (scripts, captures DEBUG) :
+
+```bat
 python S3\pcsc_firmware\tools\pcsc_term.py COM12 INFO IS_READER
 python S3\pcsc_firmware\tools\pcsc_term.py COM12 --listen 300 --log debug.txt "DEBUG ON"
 ```
@@ -42,7 +60,9 @@ python S3\pcsc_firmware\tools\pcsc_term.py COM12 --listen 300 --log debug.txt "D
 Codes de `CARD_READ_NOT_CV` :
 - `V1` : Vitale 1, reconnue mais non lue ;
 - `T1` : carte T=1 sur un lecteur TPDU ;
-- `<SW>` : la carte n'a pas l'application Vitale, p. ex. `6A82`.
+- `CB`, `CPS`, `OPENPGP`, `PIV`, `ID` : autres cartes reconnues, suivies des données
+  publiques lues (`;NOM=…;PRENOM=…;ETAB=…;NUM=…`). Numéro de carte bancaire masqué ;
+- `<SW>` : autre carte sans application Vitale, p. ex. `6A82`.
 
 Détail complet : [doc/protocole.md](doc/protocole.md).
 
@@ -50,7 +70,8 @@ Détail complet : [doc/protocole.md](doc/protocole.md).
 
 | Document | Contenu |
 |---|---|
-| [doc/protocole.md](doc/protocole.md) | trame, événements, commandes, résultats, `INFO`, mode `DEBUG`, outil `pcsc_term.py` |
+| [doc/protocole.md](doc/protocole.md) | trame, événements, commandes, résultats, `INFO`, mode `DEBUG` |
+| [doc/terminal.md](doc/terminal.md) | **terminal graphique** `pcsc_term` : fenêtre, panneau du lecteur, mode démo, exe, ligne de commande |
 | [doc/materiel.md](doc/materiel.md) | carte N8R2, alimentation du lecteur (VBUS), port COM (DTR/RTS), sobriété, **LED** |
 | [doc/build_flash.md](doc/build_flash.md) | chaîne d'outils, FQBN, scripts `.bat`, détection du port, vérification |
 | [doc/architecture.md](doc/architecture.md) | tâches, USB Host / CCID, APDU T=0, séquence Vitale 2, `RESTART`, recherche toutes les 30 s |
@@ -74,9 +95,11 @@ S3/
     usb_ccid.h                   USB Host + pilote CCID minimal, diagnostic du port
     apdu_t0.h                    couche APDU (T=0)
     vitale.h                     ATR, sequence Vitale 2, BER-TLV, resultat
+    cartes.h                     autres cartes : CB (EMV), CPS (PKCS#15/X.509), OpenPGP, PIV, ID
     status_led.h                 LED d'etat WS2812
-    tools/pcsc_term.py           terminal de test (pyserial)
-    doc/                         documentation (ce sommaire)
+    tools/pcsc_term.py           terminal graphique + mode demo + ligne de commande (pyserial, tkinter)
+    tools/build_exe.bat          construit tools/dist/pcsc_term.exe (PyInstaller ; dist/ non versionne)
+    doc/                         documentation (ce sommaire), doc/images/ = captures du terminal
     Ressources/                  cahier des charges initial
 ```
 
@@ -84,5 +107,5 @@ S3/
 
 | Statut | Points |
 |---|---|
-| Validé sur matériel le 2026-10-14 | protocole, détection du lecteur Gemalto GemPC Twin (branchement, débranchement, recherche toutes les 30 s), reconnaissance d'une Vitale 1, refus d'une carte bancaire (`NOT_CV:6A82`) |
-| **Reste à valider** | lecture d'une **Carte Vitale 2**, lecteur Identiv CLOUD 2700 R. Voir [doc/recette.md](doc/recette.md) |
+| Validé sur matériel le 2026-10-14 | protocole ; lecteurs **Gemalto GemPC Twin** et **Identiv CLOUD 2700 R** (branchement, débranchement, recherche toutes les 30 s) ; reconnaissance d'une Vitale 1 ; carte bancaire reconnue (`NOT_CV:CB`) ; terminal graphique sur COM12 |
+| **Reste à valider** | lecture d'une **Carte Vitale 2**. Voir [doc/recette.md](doc/recette.md) |

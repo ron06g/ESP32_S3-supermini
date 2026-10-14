@@ -362,6 +362,7 @@ initialisés, et le CPU tourne à 80 MHz.
 |---|---|
 | `README.md` | point d'entrée et sommaire |
 | `doc/protocole.md` | protocole, `INFO`, `DEBUG` |
+| `doc/terminal.md` | terminal graphique `tools/pcsc_term.py` (exe via `tools/build_exe.bat`, `--demo`, ligne de commande) |
 | `doc/materiel.md` | VBUS, LED |
 | `doc/build_flash.md` | FQBN, scripts |
 | `doc/architecture.md` | tâches, CCID, séquence Vitale |
@@ -389,6 +390,10 @@ Invariants :
   signifie un lecteur non alimenté (VBUS), pas un bug ;
 - une carte en mode spécifique (TA2) sur un lecteur TPDU exige `SetParameters` avec le
   Fi/Di de TA1 ;
+- les cartes autres que la Vitale sont identifiées par `cartes.h` (CB, CPS, OpenPGP, PIV, ID),
+  avec **uniquement des données publiques** (`CARD_READ_NOT_CV:<TYPE>;CLÉ=valeur…`). Le numéro
+  de carte bancaire n'est **jamais** émis en entier (6 + 4 chiffres, PCI DSS), ni la date
+  d'expiration. Les réponses EMV sont masquées en DEBUG (`g_dbgMask`) ;
 - les journaux `DEBUG` d'une Vitale 2 lue contiennent nom et NIR en clair : ne pas
   les versionner sans les masquer.
 

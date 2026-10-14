@@ -39,7 +39,7 @@
 | `bVoltageSupport` | 0x07 | 0x07 |
 | `dwProtocols` | T=0, T=1 | T=0, T=1 |
 | Horloge | 4,8 MHz relevé en DEBUG (libccid indique 4 MHz pour une révision antérieure) | 4,8 / 16 MHz |
-| `dwFeatures` | 0x00010230 : **TPDU**, horloge et débit automatiques, NAD | 0x000404BA : **APDU étendu**, paramètres d'après l'ATR, tension, horloge, débit, PPS et IFSD automatiques |
+| `dwFeatures` | 0x00010230 : **TPDU**, horloge et débit automatiques, NAD | libccid : 0x000404BA (**APDU étendu**, paramètres d'après l'ATR, tension, horloge, débit, PPS et IFSD automatiques). **Relevé sur l'exemplaire de l'utilisateur : 0x000100BA** (TPDU, mêmes automatismes sauf IFSD) |
 | `dwMaxCCIDMessageLength` | 271 | 271 |
 
 ## Normes
@@ -51,6 +51,28 @@
   modes négociable et spécifique (TA2), PPS, T=0, classes de tension.
 - **ISO/IEC 7816-4** : `SELECT` (A4), `READ BINARY` (B0), `GET RESPONSE` (C0), mots
   d'état (`9000`, `61xx`, `6Cxx`, `6A82`, `6282`, `6B00`).
+- **EMV Books 1 et 3** (cartes de paiement) :
+  - annuaire `1PAY.SYS.DDF01` (PSE, cartes à contact) et AID enregistrés (RID
+    `A0 00 00 00 42` CB, `…03` Visa, `…04` Mastercard / Maestro, `…25` Amex) ;
+  - `GET PROCESSING OPTIONS` (`80 A8`, PDOL `9F38`, AFL `94`), `READ RECORD` ;
+  - tags `5F20` / `9F0B` (titulaire), `5A` / `57` (numéro, émis masqué),
+    `50` / `9F12` (libellé).
+- **PCI DSS** : un numéro de carte ne s'affiche que masqué (au plus 6 premiers + 4
+  derniers chiffres).
+- **OpenPGP Card** v3.4 (GnuPG e.V.) : AID `D2 76 00 01 24 01`, DO `4F` (AID complet,
+  fabricant + numéro de série), DO `65` / `5B` (nom « Nom<<Prénom », ISO 8859-1).
+- **NIST SP 800-73-4** (PIV) : AID `A0 00 00 03 08 00 00 10 00 01 00`, `GET DATA`
+  (`00 CB 3F FF`, tag `5C`), CHUID `5FC102` (GUID `34`), certificats `5FC105` /
+  `5FC101` (`70` certificat, `71` CertInfo).
+- **ICAO Doc 9303** (documents de voyage) : application eMRTD
+  `A0 00 00 02 47 10 01`. Données protégées par BAC / PACE.
+- **PKCS#15 / ISO 7816-15** (structure des cartes à certificats) : EF.DIR `2F00`,
+  ODF `5031`, CDF ; **X.509 / RFC 5280** pour le sujet des certificats.
+- **OpenSC**, `card-iasecc.c` : ATR des cartes CPS « IAS/ECC CPx »
+  `3B:AC:00:40:2A:00:12:25:00:64:80:00:03:10:00:90:00`, masque
+  `FF:00:00:00:00:FF:FF:FF:FF:FF:FF:00:00:00:FF:FF:FF`. Lues en PKCS#15 standard
+  (`pkcs15-iasecc.c`).
+  <https://github.com/OpenSC/OpenSC/blob/master/src/libopensc/card-iasecc.c>
 
 ## ESP32-S3, ESP-IDF, Arduino
 

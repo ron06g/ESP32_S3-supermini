@@ -46,6 +46,8 @@ Journaux complets : [journaux/](journaux/).
 | 5 | **Carte bancaire** (famille Revolut / Visa), ATR `3B FF 13 00 00 10 00 31 01 F1 56 40 11 00 19 00 …` | **Avant correctif** : `SELECT` → `XFR_PARITY_ERROR` → `CARD_READ_ERROR`. **Après correctif** : `SetParameters Fi/Di=0x13` → `SELECT` → `6A82` → `CARD_READ_NOT_CV:6A82` (0,08 s). Journaux 3 et 4 |
 | 6 | Débranchement puis rebranchement du lecteur | `DEV_GONE` → `READER_KO` → recherche toutes les 30 s (coupure du port `off=ESP_OK on=ESP_OK`) → rebranché : `NEW_DEV` → `READER_OK`. Journal 3 |
 | 7 | Démarrage (après flash) avec le lecteur déjà branché | `READER_OK` sans intervention. Journal 4 |
+| 8 | **Identiv CLOUD 2700 R** (04E6:5810), branché par l'utilisateur à la place du Gemalto | détecté (`READER_OK`), `INFO` : `LEVEL=TPDU`, `FEAT=000100BA`. **Carte bancaire** → `CARD_READ_NOT_CV:6A82` en 75 ms (mode spécifique, `SetParameters` d'après TA1) |
+| 9 | Terminal graphique `pcsc_term` sur COM12 | connexion, synchronisation (`IS_READER`, `IS_CARD`, `CARD_STATE`, `INFO`), panneau « Prêt », onglet Lecteur USB : OK. Exe autonome : démarre, interface identique |
 
 Mesures complémentaires :
 - **PHY** : `usb_wrap.otg_conf=0x001D5000` (pad_en=1, phy_sel=0 : PHY interne) et
@@ -70,7 +72,7 @@ L'analyse de l'ATR lit maintenant aussi TA2 et TC2.
 | Lecteur | VID:PID | Niveau | `dwFeatures` | Message max | État |
 |---|---|---|---|---|---|
 | Gemalto (Gemplus) GemPC Twin « USB SmartCard Reader » | 08E6:3437 | TPDU | 0x00010230 | 271 o | **testé, OK** |
-| Identiv CLOUD 2700 R | 04E6:5810 | APDU étendu | 0x000404BA | 271 o | non testé ; descripteurs compatibles d'après la base libccid |
+| Identiv CLOUD 2700 R | 04E6:5810 | **TPDU** (relevé) | **0x000100BA** (relevé) | 271 o | **testé, OK**. La base libccid indique APDU étendu 0x000404BA : autre révision de firmware. Le firmware du module lit le niveau réel dans le descripteur |
 
 Gemalto, valeurs relevées en mode DEBUG :
 
@@ -89,7 +91,7 @@ Sur le PC, les deux lecteurs se présentent en « Microsoft Usbccid (WUDF) », c
 
 - [ ] **Lecture d'une Carte Vitale 2** (avec photo) : c'est le but de la preuve de
       faisabilité. La carte de l'utilisateur est une Vitale 1.
-- [ ] Lecteur Identiv CLOUD 2700 R (niveau APDU, tension automatique).
+- [x] Lecteur Identiv CLOUD 2700 R : détecté, carte bancaire refusée proprement (TPDU, tension automatique).
 - [ ] `RESTART` avec une carte insérée.
 - [ ] Durée d'une lecture complète de Vitale 2, à vitesse par défaut et sans PPS.
 - [ ] Hub USB entre l'ESP32 et le lecteur.

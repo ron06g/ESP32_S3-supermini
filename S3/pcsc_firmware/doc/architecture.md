@@ -15,6 +15,7 @@ Lecteur CCID --USB (hôte, IDF)--> ESP32-S3 N8R2 --UART0 / CH343--> PC / automat
 | `usb_ccid.h` | USB Host IDF (tâches `usbLib` / `usbCli`, filtre d'énumération), attache / détache, descripteur CCID, échanges bulk synchrones, messages CCID, diagnostic du port (HPRT, PHY) |
 | `apdu_t0.h` | APDU au-dessus de `XfrBlock` (cartes T=0) : cas 4 → cas 3, `61xx` → GET RESPONSE, `6Cxx` → Le corrigé |
 | `vitale.h` | ATR (protocoles, TA1/TA2/TC1/TC2), mise sous tension, séquence Vitale 2 (AID, pointeurs EF 2001, fichiers), BER-TLV, trame résultat |
+| `cartes.h` | identification des autres cartes et de leurs données publiques : CB (EMV), CPS (PKCS#15 / X.509), OpenPGP, PIV, ID (ICAO). Voir plus bas |
 | `status_led.h` | LED d'état : tâche `led` (~50 Hz) ; le reste du code ne fait que `ledSet(état)` / `ledFlash()` |
 | `tools/pcsc_term.py` | terminal de test (pyserial), hors firmware |
 
@@ -150,7 +151,9 @@ Reprise du script open source Cardpeek `vitale_2.lua`, avec CLA `00` (voir
    - ATR `3F 65 25 …` → `NOT_CV:V1` ;
    - carte T=1 seule sur un lecteur TPDU → `NOT_CV:T1`.
 2. `SELECT` de l'AID `D2 50 00 00 02 56 49 54 41 4C 45` (« VITALE ») :
-   `00 A4 04 00 0B …`. Un SW autre que `9000` → `NOT_CV:<SW>`.
+   `00 A4 04 00 0B …`. Si le SW n'est pas `9000`, ce n'est pas une Vitale 2.
+   `cardIdentify()` (`cartes.h`, section suivante) cherche alors un autre type de
+   carte. Rien de reconnu → `NOT_CV:<SW du SELECT Vitale>`.
 3. `SELECT` de l'EF `2001` (`00 A4 02 00 02 20 01`), puis `READ BINARY` `00 B0 hi lo 00`
    par blocs de 256 octets :
    - arrêt sur un bloc court, `6282`, `6B00` ou un autre SW ;
@@ -172,3 +175,67 @@ Reprise du script open source Cardpeek `vitale_2.lua`, avec CLA `00` (voir
    | `93` | NIR | `NIR` |
 
    Au plus 6 bénéficiaires, 40 caractères par champ.
+
+## Autres cartes (`cartes.h`)
+
+`cardIdentify()` est appelée quand l'application Vitale est absente. Elle essaie
+dans cet ordre, en lecture seule et sans code PIN :
+
+| Ordre | Type | Reconnaissance | Données publiques lues |
+|---|---|---|---|
+| 1 | `CPS` | ATR des cartes de l'ANS : octets 5 à 10 = `00 12 25 00 64 80` (comme OpenSC, pilote IAS/ECC « CPx ») | PKCS#15 : `SELECT` MF → EF.DIR (`2F00`, lecture binaire ou par enregistrements) → AID ou chemin de l'application → ODF (`5031`) → CDF (`A4`, sinon `A5` / `A6`) → chemins des certificats (`[1]` → `04`) → certificat → **sujet X.509** |
+| 2 | `CB` | annuaire de paiement EMV `1PAY.SYS.DDF01` : SFI (tag `88`), `READ RECORD` → applications (`61` { `4F` AID, `50` libellé }). À défaut, `SELECT` des AID connus | application internationale si elle existe (sinon CB) : `SELECT` (FCI : `9F12` / `50` libellé, `9F38` PDOL) → `GET PROCESSING OPTIONS` → AFL (`80` ou `77` / `94`) → `READ RECORD` → `9F0B` / `5F20` titulaire, `5A` / `57` numéro **masqué**. Sans AFL : SFI 1 à 4, enregistrements 1 à 4 |
+| 3 | `OPENPGP` | AID `D2 76 00 01 24 01` | `GET DATA 4F` (AID complet : fabricant, numéro de série), `GET DATA 65` → `5B` nom « Nom<<Prénom » (ISO 8859-1) |
+| 4 | `PIV` | AID `A0 00 00 03 08 00 00 10 00 01 00` | `GET DATA 5FC102` (CHUID → `34` GUID), certificat `5FC105` (sinon `5FC101`) → `70` → sujet X.509. Un certificat compressé (`71` bit 0) est ignoré |
+| 5 | `ID` | AID ICAO eMRTD `A0 00 00 02 47 10 01` | aucune : BAC / PACE nécessaire |
+
+Applications EMV reconnues :
+
+| Réseau | AID |
+|---|---|
+| CB | `A0 00 00 00 42 10 10` |
+| Visa | `A0 00 00 00 03 10 10` |
+| Visa Electron | `…03 20 10` |
+| V PAY | `…03 20 20` |
+| Mastercard | `A0 00 00 00 04 10 10` |
+| Maestro | `…04 30 60` |
+| American Express | `A0 00 00 00 25 01` |
+| Discover | `A0 00 00 01 52 30 10` |
+| JCB | `A0 00 00 00 65 10 10` |
+| UnionPay | `A0 00 00 03 33 01 01 01` |
+
+Au-delà de cette liste, une application est rattachée à son réseau par ses 5
+premiers octets (RID).
+
+- **PDOL** (données demandées par la carte pour `GET PROCESSING OPTIONS`) : tout à
+  zéro, sauf :
+
+  | Tag | Valeur |
+  |---|---|
+  | `9F1A` (pays) | France, `0250` |
+  | `5F2A` (devise) | euro, `0978` |
+  | `9F35` (type de terminal) | `22` |
+  | `9F37` (nombre imprévisible) | aléatoire |
+
+  Il n'y a **pas** de `GENERATE AC` : aucune transaction n'est faite.
+- **Sujet X.509** : chaque `SET { SEQUENCE { OID, valeur } }` du sujet est lu.
+
+  | OID | Attribut | Champ |
+  |---|---|---|
+  | 2.5.4.3 | CN | `TITULAIRE` |
+  | 2.5.4.4 | SN | `NOM` |
+  | 2.5.4.42 | GN | `PRENOM` |
+  | 2.5.4.10 | O | `ETAB` |
+  | 2.5.4.5 | serialNumber | `IDENT` |
+  | 2.5.4.12 | title | `PROFESSION` |
+
+  Chaînes acceptées : UTF8String, PrintableString, IA5String, T61String, BMPString.
+- **Texte** : accents repliés en ASCII (é → e…), et `;` `=` `|` remplacés par une
+  espace (`textCopy`).
+- **Confidentialité** :
+  - le numéro de carte bancaire n'est conservé que masqué ;
+  - les tampons des enregistrements EMV sont effacés après lecture ;
+  - `g_dbgMask` masque les réponses (`APDU<` / `CCID<`) dans le journal DEBUG
+    pendant `GET PROCESSING OPTIONS` et `READ RECORD`.
+- **Tampons** : un certificat ou un CHUID (jusqu'à 4 Ko) est lu dans `g_vitBuf`,
+  et les réponses chaînées (`61xx`) sont concaténées par `apduTransmit`.
