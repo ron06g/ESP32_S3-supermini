@@ -30,7 +30,12 @@ static uint16_t apduTransmit(const uint8_t* cmd, size_t n, uint8_t* out, size_t 
   for (int i = 0; i < 16; ++i) {
     const uint8_t* r;
     size_t rl;
-    if (ccidXfrBlock(tx, txLen, &r, &rl) != CC_OK || rl < 2) return 0;
+    dbgHex("APDU>", tx, txLen);
+    if (ccidXfrBlock(tx, txLen, &r, &rl) != CC_OK || rl < 2) {
+      dbg("APDU : pas de reponse exploitable de la carte");
+      return 0;
+    }
+    dbgHex("APDU<", r, rl);
     uint8_t sw1 = r[rl - 2], sw2 = r[rl - 1];
     size_t dl = rl - 2, room = outMax - *outLen;
     if (dl > room) dl = room;

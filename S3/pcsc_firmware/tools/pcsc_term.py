@@ -13,6 +13,7 @@ Usage :
     python pcsc_term.py COM12                    # interactif (Ctrl+C pour quitter)
     python pcsc_term.py COM12 IS_READER INFO     # envoie, attend les reponses, quitte
     python pcsc_term.py COM12 --wait 8 READ_CARD
+    python pcsc_term.py COM12 --listen 120 --log debug.txt DEBUG   # journal DEBUG 2 min
 
 Dependance : pyserial (pip install pyserial).
 """
@@ -24,6 +25,14 @@ import time
 import serial
 
 STX, ETX, EOT = 0x02, 0x03, 0x04
+LOG = None                 # fichier journal (--log), sinon None
+
+
+def out(line: str) -> None:
+    print(line, flush=True)
+    if LOG:
+        LOG.write(line + "\n")
+        LOG.flush()
 
 
 def stamp() -> str:
@@ -49,7 +58,7 @@ def reader(s: serial.Serial, stop: threading.Event) -> None:
     def flush_noise() -> None:
         txt = noise.decode("ascii", "replace").strip()
         if txt:
-            print(f"{stamp()} ~~ {txt}", flush=True)
+            out(f"{stamp()} ~~ {txt}")
         noise.clear()
 
     while not stop.is_set():
@@ -64,7 +73,7 @@ def reader(s: serial.Serial, stop: threading.Event) -> None:
                 frame = bytearray()
             elif frame is not None:
                 if b in (EOT, ETX):
-                    print(f"{stamp()} << {frame.decode('ascii', 'replace').rstrip()}", flush=True)
+                    out(f"{stamp()} << {frame.decode('ascii', 'replace').rstrip()}")
                     frame = None
                 else:
                     frame.append(b)
@@ -76,7 +85,7 @@ def reader(s: serial.Serial, stop: threading.Event) -> None:
 
 
 def send(s: serial.Serial, cmd: str) -> None:
-    print(f"{stamp()} >> {cmd}", flush=True)
+    out(f"{stamp()} >> {cmd}")
     s.write(bytes([STX]) + cmd.encode("ascii", "replace") + b"\r\n" + bytes([EOT]))
 
 
@@ -86,7 +95,14 @@ def main() -> int:
     ap.add_argument("cmds", nargs="*", help="commandes a envoyer puis quitter (sinon interactif)")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--wait", type=float, default=3.0, help="attente apres chaque commande (s)")
+    ap.add_argument("--listen", type=float, default=0.0,
+                    help="apres les commandes, rester a l'ecoute N secondes (journal, branchements...)")
+    ap.add_argument("--log", help="ajoute aussi chaque ligne a ce fichier")
     args = ap.parse_args()
+
+    global LOG
+    if args.log:
+        LOG = open(args.log, "a", encoding="utf-8")
 
     try:
         s = open_port(args.port, args.baud)
@@ -103,8 +119,9 @@ def main() -> int:
             for c in args.cmds:
                 send(s, c)
                 time.sleep(args.wait)
+            time.sleep(args.listen)
         else:
-            print("Commandes : RESTART  IS_READER  IS_CARD  READ_CARD  CARD_STATE  INFO   (Ctrl+C : quitter)")
+            print("Commandes : RESTART  IS_READER  IS_CARD  READ_CARD  CARD_STATE  INFO  DEBUG   (Ctrl+C : quitter)")
             while True:
                 line = input().strip()
                 if line:
@@ -115,6 +132,8 @@ def main() -> int:
         stop.set()
         th.join(timeout=1)
         s.close()
+        if LOG:
+            LOG.close()
     return 0
 
 

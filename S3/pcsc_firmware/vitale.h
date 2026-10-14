@@ -114,7 +114,7 @@ static void benefAdd(const uint8_t* p, size_t len) {
     if (dst) { fieldCopy(dst, t.val, t.len); any = true; }
     p = nx;
   }
-  if (any) ++g_nBenef;
+  if (any) { ++g_nBenef; dbg("VITALE : beneficiaire %d trouve (gabarit 65)", g_nBenef); }
 }
 
 // Cherche les gabarits 65 a toute profondeur (raisonnable).
@@ -173,6 +173,9 @@ static bool vitParsePointers(const uint8_t* buf, size_t len) {
     }
     q = nx;
   }
+  for (int i = 0; i < g_nVitApps; ++i) dbgHex("VITALE pointeurs : application", g_vitApps[i].aid, g_vitApps[i].aidLen);
+  for (int i = 0; i < g_nVitFiles; ++i)
+    dbg("VITALE pointeurs : fichier %04X (cle %04X)", g_vitFiles[i].fid, g_vitFiles[i].key);
   return g_nVitApps > 0 && g_nVitFiles > 0;
 }
 
@@ -213,19 +216,33 @@ static uint16_t readBin(uint8_t* buf, size_t max, size_t* outLen) {
 }
 
 // ---------------------------------------------------------------- lecture
-struct AtrInfo { bool t0, t1; uint8_t tc1; };
+// ta1 : Fi/Di proposes (0x11 = valeurs par defaut). ta2 present = MODE
+// SPECIFIQUE : la carte parle d'emblee avec les parametres de TA1 (si le bit
+// 0x10 de TA2 est a 0), sans PPS possible. tc2 = WI (T=0, defaut 10).
+struct AtrInfo { bool t0, t1, hasTa1, hasTa2; uint8_t ta1, ta2, tc1, tc2; };
 
 static void atrParse(const uint8_t* a, size_t n, AtrInfo* r) {
-  r->t0 = r->t1 = false;
+  r->t0 = r->t1 = r->hasTa1 = r->hasTa2 = false;
+  r->ta1 = 0x11;
+  r->ta2 = 0;
   r->tc1 = 0;
+  r->tc2 = 0x0A;
   if (n < 2) return;
   size_t  i = 2;
   uint8_t y = a[1] >> 4;
   bool    anyTd = false;
   for (int level = 1; level < 8; ++level) {
-    if (y & 0x1) ++i;                                         // TAi
+    if (y & 0x1) {                                            // TAi
+      if (level == 1 && i < n) { r->ta1 = a[i]; r->hasTa1 = true; }
+      if (level == 2 && i < n) { r->ta2 = a[i]; r->hasTa2 = true; }
+      ++i;
+    }
     if (y & 0x2) ++i;                                         // TBi
-    if (y & 0x4) { if (level == 1 && i < n) r->tc1 = a[i]; ++i; }   // TCi
+    if (y & 0x4) {                                            // TCi
+      if (level == 1 && i < n) r->tc1 = a[i];
+      if (level == 2 && i < n && a[i]) r->tc2 = a[i];
+      ++i;
+    }
     if (!(y & 0x8) || i >= n) break;                          // pas de TDi
     uint8_t td = a[i++];
     anyTd = true;
@@ -246,10 +263,16 @@ static bool cardPowerUp() {
     if (g_rd.voltage & 0x02) sel[n++] = 2;
     if ((g_rd.voltage & 0x01) || n == 0) sel[n++] = 1;
   }
+  static const char* const VNAME[] = { "auto", "5V", "3V", "1.8V" };
   for (int i = 0; i < n; ++i) {
     uint8_t len = 0;
+    dbg("CARTE : mise sous tension (%s)", VNAME[sel[i] & 3]);
     int r = ccidPowerOn(sel[i], g_diag.atr, &len);
-    if (r == CC_OK) { g_diag.atrLen = len; return true; }
+    if (r == CC_OK) {
+      g_diag.atrLen = len;
+      dbgHex("CARTE ATR", g_diag.atr, len);
+      return true;
+    }
     if (r != CC_FAILED) return false;               // erreur d'echange : inutile d'insister
     ccidPowerOff();
   }
@@ -279,21 +302,38 @@ static int vitaleRead(char* out, size_t max) {
   }
   AtrInfo atr;
   atrParse(a, an, &atr);
+  dbg("CARTE : ATR T=0 %s, T=1 %s, TC1=%u, convention %s", atr.t0 ? "oui" : "non", atr.t1 ? "oui" : "non",
+      atr.tc1, (an && a[0] == 0x3F) ? "inverse" : "directe");
   if (g_rd.level == LVL_TPDU) {
     if (!atr.t0) { snprintf(out, max, "CARD_READ_NOT_CV:T1"); return VIT_NOT_CV; }
-    // Lecteur TPDU sans negociation automatique : parametres T=0 explicites,
-    // vitesse par defaut (Fi/Di 0x11, pas de PPS). Au mieux (erreur ignoree).
-    if (!(g_rd.features & CCID_F_AUTO_NEGOT))
-      ccidSetParamsT0(0x11, a[0] == 0x3F ? 0x02 : 0x00, atr.tc1, 0x0A);
+    // Lecteur TPDU sans negociation automatique : parametres T=0 explicites.
+    //  - mode specifique (TA2 present, bit 0x10 a 0) : la carte parle DEJA
+    //    avec le Fi/Di de TA1 -> on l'impose au lecteur (sinon erreurs de
+    //    parite : cas vecu avec une carte bancaire 3B FF 13 ... TA2=00) ;
+    //  - mode negociable : vitesse par defaut (0x11), pas de PPS.
+    // Au mieux (erreur ignoree).
+    if (!(g_rd.features & CCID_F_AUTO_NEGOT)) {
+      bool    specific = atr.hasTa2 && !(atr.ta2 & 0x10);
+      uint8_t fidi     = specific ? atr.ta1 : 0x11;
+      dbg("CARTE : mode %s, SetParameters Fi/Di=0x%02X WI=%u", atr.hasTa2 ? "specifique" : "negociable",
+          fidi, atr.tc2);
+      ccidSetParamsT0(fidi, a[0] == 0x3F ? 0x02 : 0x00, atr.tc1, atr.tc2);
+    }
   }
 
   uint16_t sw = selectAid(AID_VITALE, sizeof(AID_VITALE));
   if (sw == 0) { diagStep("SELAID"); return VIT_ERROR; }
-  if (sw != 0x9000) { snprintf(out, max, "CARD_READ_NOT_CV:%04X", sw); return VIT_NOT_CV; }
+  if (sw != 0x9000) {
+    dbg("VITALE : application Vitale absente (SW %04X) -> pas une Carte Vitale 2", sw);
+    snprintf(out, max, "CARD_READ_NOT_CV:%04X", sw);
+    return VIT_NOT_CV;
+  }
+  dbg("VITALE : application Vitale selectionnee");
 
   size_t len = 0;
   if (selectFid(0x2001) != 0x9000) { diagStep("SEL2001"); return VIT_ERROR; }
   if (readBin(g_vitBuf, sizeof(g_vitBuf), &len) != 0x9000) { diagStep("RD2001"); return VIT_ERROR; }
+  dbg("VITALE : fichier de pointeurs 2001 lu (%u o)", (unsigned)len);
   if (!vitParsePointers(g_vitBuf, len)) { diagStep("PTR"); return VIT_ERROR; }
 
   g_nBenef = 0;
@@ -311,6 +351,7 @@ static int vitaleRead(char* out, size_t max) {
       ++nRead;
       sw = readBin(g_vitBuf, sizeof(g_vitBuf), &len);
       if (sw == 0) { diagStep("READ"); return VIT_ERROR; }
+      dbg("VITALE : fichier %04X lu : %u o (SW %04X)", g_vitFiles[j].fid, (unsigned)len, sw);
       if (sw != 0x9000 || len == 0) continue;
       if (g_vitBuf[0] == 0x00 || (len >= 2 && g_vitBuf[0] == 0x04 && g_vitBuf[1] == 0x00)) continue;
       tlvScan(g_vitBuf, len, 0);

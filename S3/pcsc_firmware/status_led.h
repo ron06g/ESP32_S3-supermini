@@ -15,6 +15,9 @@
 //    LED_CARD_ERROR   rouge fixe 50 %               CARD_READ_ERROR
 //    LED_CARD_NOT_CV  violet fixe 50 %              CARD_READ_NOT_CV (rouge + bleu)
 //    LED_USB_FAULT    rouge 100 %, clignotement rapide  pile USB en panne (verrouille)
+//    LED_SCAN         bleu, respiration rapide      nouvelle recherche du lecteur (toutes
+//                                                   les 30 s sans lecteur : ~3 s, entre deux
+//                                                   recherches = rouge / orange fixe)
 //  Eclair : bref blanc a chaque commande recue sur le port COM.
 //  Auto-test au demarrage : rouge, vert, bleu (prouve les 3 canaux).
 // ===========================================================================
@@ -26,9 +29,10 @@
 #define LED_SLOW_MS  1600   // periode de la respiration lente
 #define LED_FAST_MS  200    // periode du clignotement rapide (5 Hz)
 #define LED_FLASH_MS 60     // duree de l'eclair « commande recue »
+#define LED_SCAN_MS  500    // periode de la respiration rapide (recherche du lecteur)
 
 enum : uint8_t { LED_BOOT, LED_READER, LED_NO_READER, LED_BAD_DEVICE, LED_CARD,
-                 LED_READING, LED_CARD_ERROR, LED_CARD_NOT_CV, LED_USB_FAULT };
+                 LED_READING, LED_CARD_ERROR, LED_CARD_NOT_CV, LED_USB_FAULT, LED_SCAN };
 
 struct LedRgb { uint8_t r, g, b; };
 
@@ -63,6 +67,7 @@ static LedRgb ledRender(uint32_t t) {
     case LED_CARD_ERROR:  return ledRgb(H, 0, 0);
     case LED_CARD_NOT_CV: return ledRgb(H, 0, H);
     case LED_USB_FAULT:   return ledBlink(t, LED_FAST_MS) ? ledRgb(M, 0, 0) : ledRgb(0, 0, 0);
+    case LED_SCAN:        return ledScale(ledRgb(0, 0, M), ledBreath(t, LED_SCAN_MS));
   }
   return ledRgb(0, 0, 0);
 }

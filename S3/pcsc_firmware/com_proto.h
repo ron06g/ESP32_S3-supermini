@@ -60,6 +60,9 @@ static const ComCmdName COM_CMDS[] = {
   { "READ_CARD",  CMD_READ_CARD  },
   { "CARD_STATE", CMD_CARD_STATE },
   { "INFO",       CMD_INFO       },     // diagnostic (hors specification initiale)
+  { "DEBUG",      CMD_DEBUG      },     // bascule le mode DEBUG (debug_log.h)
+  { "DEBUG ON",   CMD_DEBUG_ON   },
+  { "DEBUG OFF",  CMD_DEBUG_OFF  },
 };
 
 // Ligne recue (non terminee par 0) -> commande postee a la tache ccid.
