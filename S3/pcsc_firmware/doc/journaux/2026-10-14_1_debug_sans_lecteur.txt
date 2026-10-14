@@ -1,0 +1,12 @@
+19:19:15.306 >> INFO
+19:19:15.370 << INFO:READER=NONE;LASTDEV=NONE;STEP=NONE
+19:19:17.306 >> DEBUG
+19:19:17.335 << DEBUG_ON
+19:19:17.335 << DBG:9.881 FIRMWARE CARD READER v1.0, compile le Oct 14 2026 19:18:01, CPU 80 MHz, tas libre 307496 o
+19:19:17.335 << DBG:9.881 USB pile : installee (ESP_OK), bloquee=0
+19:19:17.357 << DBG:9.881 PHY usb_wrap.otg_conf=0x001D5000 (pad_en=1 phy_sel=0) rtc.usb_conf=0x00180000 (sw_hw_sel=1 sw_sel=1)
+19:19:17.357 << DBG:9.882 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0 clients=1
+19:19:17.357 << DBG:9.882 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=22s bloque=0 led=2
+19:19:17.431 << DBG:9.882 DIAG : aucun appareil ELECTRIQUEMENT connecte (D+ et D- au repos). Un lecteur alimente tire D+ a l'etat haut : verifier le 5 V (VBUS) sur la prise USB / l'adaptateur OTG.
+19:19:19.307 >> IS_READER
+19:19:19.376 << READER_KO

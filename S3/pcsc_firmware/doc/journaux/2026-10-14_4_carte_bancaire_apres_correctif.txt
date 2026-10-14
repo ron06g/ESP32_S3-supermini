@@ -1,0 +1,82 @@
+19:32:44.610 >> DEBUG ON
+19:32:44.641 << DEBUG_ON
+19:32:44.641 << DBG:12.711 FIRMWARE CARD READER v1.0, compile le Oct 14 2026 19:32:13, CPU 80 MHz, tas libre 300120 o
+19:32:44.641 << DBG:12.712 USB pile : installee (ESP_OK), bloquee=0
+19:32:44.663 << DBG:12.712 PHY usb_wrap.otg_conf=0x001D5000 (pad_en=1 phy_sel=0) rtc.usb_conf=0x00180000 (sw_hw_sel=1 sw_sel=1)
+19:32:44.663 << DBG:12.712 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1 clients=1
+19:32:44.663 << DBG:12.712 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:32:44.722 << DBG:12.712 LECTEUR 08E6:3437 'USB SmartCard Reader' niveau=TPDU dwFeatures=0x00010230
+19:32:45.610 >> INFO
+19:32:45.681 << INFO:READER=08E6:3437;NAME=USB SmartCard Reader;LEVEL=TPDU;FEAT=00010230;ATR=NONE;STEP=NONE;SW=0000;MS=0
+19:32:54.716 << DBG:22.736 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:32:54.716 << DBG:22.736 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:04.750 << DBG:32.765 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:04.750 << DBG:32.765 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:14.768 << DBG:42.792 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:14.769 << DBG:42.792 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:24.802 << DBG:52.816 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:24.802 << DBG:52.816 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:34.816 << DBG:62.840 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:34.816 << DBG:62.840 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:44.851 << DBG:72.867 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:44.851 << DBG:72.867 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:33:54.880 << DBG:82.894 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:33:54.880 << DBG:82.894 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:04.912 << DBG:92.924 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:04.912 << DBG:92.924 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:14.930 << DBG:102.950 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:14.930 << DBG:102.950 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:24.957 << DBG:112.981 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:24.957 << DBG:112.981 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:34.996 << DBG:123.009 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:34.996 << DBG:123.009 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:45.020 << DBG:133.036 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:45.020 << DBG:133.036 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:34:55.043 << DBG:143.070 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:34:55.044 << DBG:143.070 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:05.074 << DBG:153.088 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:05.074 << DBG:153.088 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:15.103 << DBG:163.118 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:15.103 << DBG:163.118 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:25.112 << DBG:173.137 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:25.112 << DBG:173.137 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:35.129 << DBG:183.151 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:35.129 << DBG:183.151 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:36.375 << DBG:184.405 SLOT : bmICCStatus 1 (carte presente inactive)
+19:35:36.376 << CARD_IN
+19:35:36.376 << DBG:184.405 LECTURE : debut
+19:35:36.376 << DBG:184.405 CARTE : mise sous tension (3V)
+19:35:36.376 << DBG:184.405 CCID> [10] 620000000000DE020000
+19:35:36.397 << DBG:184.469 CCID< [32] 801600000000DE0000003BFF13000010003101F1564011001900000000000000
+19:35:36.398 << DBG:184.469 CARTE ATR [22] 3BFF13000010003101F1564011001900000000000000
+19:35:36.398 << DBG:184.470 CARTE : ATR T=0 oui, T=1 non, TC1=0, convention directe
+19:35:36.398 << DBG:184.470 CARTE : mode specifique, SetParameters Fi/Di=0x13 WI=10
+19:35:36.419 << DBG:184.470 CCID> [15] 610500000000DF0000001300000A00
+19:35:36.420 << DBG:184.471 CCID< [15] 820500000000DF0000001300000A00
+19:35:36.420 << DBG:184.471 APDU> [16] 00A404000BD250000002564954414C45
+19:35:36.420 << DBG:184.472 CCID> [26] 6F1000000000E000000000A404000BD250000002564954414C45
+19:35:36.442 << DBG:184.479 CCID< [12] 800200000000E00000006A82
+19:35:36.442 << DBG:184.480 APDU< [2] 6A82
+19:35:36.442 << DBG:184.480 VITALE : application Vitale absente (SW 6A82) -> pas une Carte Vitale 2
+19:35:36.442 << DBG:184.480 CCID> [10] 630000000000E1000000
+19:35:36.442 << DBG:184.491 CCID< [10] 810000000000E1010000
+19:35:36.508 << DBG:184.491 LECTURE : fin en 75 ms (etape en echec : aucune)
+19:35:36.508 << CARD_READ_NOT_CV:6A82
+19:35:41.225 << DBG:189.255 SLOT : bmICCStatus 2 (pas de carte)
+19:35:41.225 << CARD_OUT
+19:35:42.987 << DBG:191.012 PORT hprt=0x00021805 alim=1 connecte=1 actif=1 vitesse=FS D+=0 D-=1 surintensite=0
+19:35:43.223 << DBG:191.263 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0
+19:35:45.251 << DBG:193.268 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:45.251 << DBG:193.268 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:35:55.271 << DBG:203.287 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:35:55.271 << DBG:203.287 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:36:05.291 << DBG:213.317 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:36:05.291 << DBG:213.317 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:36:15.320 << DBG:223.342 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:36:15.320 << DBG:223.342 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:36:25.335 << DBG:233.362 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:36:25.335 << DBG:233.362 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:36:35.358 << DBG:243.388 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:36:35.358 << DBG:243.388 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:36:45.375 << DBG:253.400 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:36:45.375 << DBG:253.400 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1

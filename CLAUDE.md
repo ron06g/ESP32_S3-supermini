@@ -348,46 +348,49 @@ affiché est conservé quand la section est reconstruite. `WEB/index.html` redir
 
 ## Second firmware : lecteur de Carte Vitale (`S3/pcsc_firmware/`)
 
-**Sans rapport avec le firmware HID** : aucun code partagé, ni BLE ni Wi-Fi (jamais
-initialisés), CPU 80 MHz. Il est dédié à la **N8R2** :
+**Sans rapport avec le firmware HID** (aucun code partagé). Il est dédié à la **N8R2** :
 
-- prise « USB » = **USB Host** (lecteur CCID « PC/SC » via un adaptateur OTG, **VBUS à
-  fournir** : cavalier « USB-OTG », câble en Y ou hub alimenté) ;
-- prise « COM » (CH343, UART0) = port protocole texte `<STX>…<CR><LF><EOT>` à 115200,
-  et flash.
+- prise « USB » = **USB Host**, avec un lecteur CCID (« PC/SC ») ;
+- prise « COM » (CH343, UART0) = protocole texte `<STX>…<CR><LF><EOT>` à 115200, et flash.
 
-Il lit les données publiques d'une **Carte Vitale 2** (séquence Cardpeek `vitale_2.lua` :
-AID `D250000002 'VITALE'`, pointeurs EF 2001, BER-TLV `65`). La carte est **coupée après
-chaque lecture** ; la **LED WS2812** (GPIO48, `status_led.h`) suit l'état (bleu = démarrage,
-vert respirant = lecteur prêt, rouge = pas de lecteur / erreur carte, violet = pas une Vitale…,
-tableau dans le README).
+Il lit les données publiques d'une Carte Vitale 2. BLE et Wi-Fi ne sont jamais
+initialisés, et le CPU tourne à 80 MHz.
 
-- **Événements** : `CARD READER v1.0`, `READER_OK`/`KO`, `CARD_IN`/`OUT`,
-  `CARD_READ:…`/`CARD_READ_ERROR`/`CARD_READ_NOT_CV:<code>`.
-- **Commandes** : `RESTART` (ré-énumère le lecteur USB, pas l'ESP32), `IS_READER`,
-  `IS_CARD`, `READ_CARD` (relecture forcée), `CARD_STATE` (cache), `INFO` (diagnostic).
-- Doc complète du protocole : `S3/pcsc_firmware/README.md`.
+**Toute la documentation du projet est dans `S3/pcsc_firmware/`** :
 
-Build et flash :
+| Fichier | Contenu |
+|---|---|
+| `README.md` | point d'entrée et sommaire |
+| `doc/protocole.md` | protocole, `INFO`, `DEBUG` |
+| `doc/materiel.md` | VBUS, LED |
+| `doc/build_flash.md` | FQBN, scripts |
+| `doc/architecture.md` | tâches, CCID, séquence Vitale |
+| `doc/recette.md` | résultats des tests, reste à valider |
+| `doc/references.md` | sources externes |
+| `doc/historique.md` | demande initiale, décisions |
 
-- FQBN `esp32:esp32:esp32s3:USBMode=default,CDCOnBoot=default,CPUFreq=80,FlashSize=8M,PartitionScheme=default_8MB,PSRAM=disabled,DebugLevel=none`.
-  `USB.begin()` n'est jamais appelé, ce qui laisse l'OTG libre pour `usb_host_install()`.
-- Compilation : `S3\pcsc_firmware_compile.bat` → `S3\firmware\pcsc_firmware_vYYMM.dd\`.
-- Flash : `S3\pcsc_firmware_flash.bat [COMx]`. Il ne détecte que les ponts USB-série
-  (VID 1A86/10C4/0403), **jamais** les modules Espressif 303A.
-- Test : `python S3/pcsc_firmware/tools/pcsc_term.py COMx [commandes]`. Le port est ouvert
-  DTR/RTS inactifs : les basculer redémarre l'ESP32.
+Elle se met à jour avec le code.
+
+Scripts et binaires (emplacements imposés) :
+- compilation : `S3\pcsc_firmware_compile.bat` → `S3\firmware\pcsc_firmware_vYYMM.dd\` ;
+- flash : `S3\pcsc_firmware_flash.bat [COMx]`. Il ne détecte que les ponts USB-série,
+  filtrés par VID **et** PID. COM3 est un écran USB à puce WCH, pas un ESP32.
 
 Invariants :
 
-- la tâche `ccid` est **seule propriétaire du lecteur** ;
-- les callbacks USB ne font que poster ou libérer un sémaphore ;
-- deux files distinctes, `g_usbEvtQueue` (USB) et `g_cmdQueue` (COM) : un flot de
-  commandes ne peut pas évincer un débranchement ;
-- la LED n'est jamais pilotée directement : `ledSet(état)` / `ledFlash()` ;
-- les échanges bulk sont synchrones et jamais laissés en vol (annulation halt → flush → clear) ;
-- un IN d'un MPS d'abord, puis le reste (pas d'attente de ZLP) ;
-- les logs IDF sont coupés (UART0 = protocole).
+- la tâche `ccid` est **seule propriétaire du lecteur** ; les callbacks USB ne font que
+  poster ou libérer un sémaphore ;
+- deux files distinctes, `g_usbEvtQueue` (USB) et `g_cmdQueue` (COM) ;
+- les échanges bulk sont synchrones et jamais laissés en vol (halt → flush → clear) ;
+  on lit un IN d'un MPS d'abord, sans attendre de ZLP ;
+- les logs IDF sont coupés (UART0 = protocole), sauf en mode `DEBUG` (trames `DBG:`) ;
+- la LED se pilote par `ledSet()` / `ledFlash()`, jamais directement ;
+- **un lecteur « non détecté » se diagnostique d'abord en `DEBUG`** : `PORT connecte=0 D+=0`
+  signifie un lecteur non alimenté (VBUS), pas un bug ;
+- une carte en mode spécifique (TA2) sur un lecteur TPDU exige `SetParameters` avec le
+  Fi/Di de TA1 ;
+- les journaux `DEBUG` d'une Vitale 2 lue contiennent nom et NIR en clair : ne pas
+  les versionner sans les masquer.
 
 ## Références
 

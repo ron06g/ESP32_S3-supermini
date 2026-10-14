@@ -1,0 +1,127 @@
+19:19:37.399 << DBG:29.885 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:19:37.399 << DBG:29.885 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=2s bloque=0 led=2
+19:19:37.457 >> DEBUG ON
+19:19:37.489 << DEBUG_ON
+19:19:37.489 << DBG:30.036 FIRMWARE CARD READER v1.0, compile le Oct 14 2026 19:18:01, CPU 80 MHz, tas libre 307496 o
+19:19:37.489 << DBG:30.036 USB pile : installee (ESP_OK), bloquee=0
+19:19:37.511 << DBG:30.036 PHY usb_wrap.otg_conf=0x001D5000 (pad_en=1 phy_sel=0) rtc.usb_conf=0x00180000 (sw_hw_sel=1 sw_sel=1)
+19:19:37.511 << DBG:30.037 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0 clients=1
+19:19:37.512 << DBG:30.037 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=2s bloque=0 led=2
+19:19:37.584 << DBG:30.037 DIAG : aucun appareil ELECTRIQUEMENT connecte (D+ et D- au repos). Un lecteur alimente tire D+ a l'etat haut : verifier le 5 V (VBUS) sur la prise USB / l'adaptateur OTG.
+19:19:40.282 << DBG:32.787 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:19:40.781 << DBG:33.287 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:19:43.533 << DBG:36.037 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:19:43.533 << DBG:36.038 RECHERCHE : aucun lecteur
+19:19:43.533 << DBG:36.038 RECHERCHE : prochaine tentative dans 30 s
+19:19:47.547 << DBG:40.038 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:19:47.547 << DBG:40.038 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=26s bloque=0 led=2
+19:19:57.549 << DBG:50.039 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:19:57.549 << DBG:50.039 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=15s bloque=0 led=2
+19:20:07.543 << DBG:60.040 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:07.543 << DBG:60.040 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=5s bloque=0 led=2
+19:20:13.537 << DBG:66.040 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:20:14.034 << DBG:66.540 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:20:16.785 << DBG:69.290 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:20:16.785 << DBG:69.291 RECHERCHE : aucun lecteur
+19:20:16.785 << DBG:69.291 RECHERCHE : prochaine tentative dans 30 s
+19:20:17.545 << DBG:70.041 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:17.545 << DBG:70.041 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=29s bloque=0 led=2
+19:20:27.547 << DBG:80.042 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:27.547 << DBG:80.042 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=19s bloque=0 led=2
+19:20:37.553 << DBG:90.043 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:37.553 << DBG:90.043 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=9s bloque=0 led=2
+19:20:46.788 << DBG:99.293 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:20:47.282 << DBG:99.793 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:20:47.546 << DBG:100.044 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:47.547 << DBG:100.044 ETAT lecteur=0 carte=0 grace=0 recherche=1 prochaine_recherche=-1s bloque=0 led=9
+19:20:49.793 << DBG:102.294 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:20:49.793 << DBG:102.295 RECHERCHE : aucun lecteur
+19:20:49.793 << DBG:102.295 RECHERCHE : prochaine tentative dans 30 s
+19:20:57.547 << DBG:110.045 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:20:57.547 << DBG:110.045 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=22s bloque=0 led=2
+19:21:07.554 << DBG:120.046 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:07.554 << DBG:120.046 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=12s bloque=0 led=2
+19:21:17.549 << DBG:130.047 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:17.550 << DBG:130.047 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=2s bloque=0 led=2
+19:21:19.787 << DBG:132.297 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:21:20.286 << DBG:132.797 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:21:23.043 << DBG:135.547 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:21:23.043 << DBG:135.548 RECHERCHE : aucun lecteur
+19:21:23.043 << DBG:135.548 RECHERCHE : prochaine tentative dans 30 s
+19:21:27.550 << DBG:140.048 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:27.550 << DBG:140.048 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=25s bloque=0 led=2
+19:21:37.551 << DBG:150.049 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:37.551 << DBG:150.049 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=15s bloque=0 led=2
+19:21:47.550 << DBG:160.050 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:47.551 << DBG:160.050 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=5s bloque=0 led=2
+19:21:53.045 << DBG:165.550 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:21:53.544 << DBG:166.050 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:21:56.306 << DBG:168.800 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:21:56.306 << DBG:168.801 RECHERCHE : aucun lecteur
+19:21:56.306 << DBG:168.801 RECHERCHE : prochaine tentative dans 30 s
+19:21:57.553 << DBG:170.051 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:21:57.553 << DBG:170.051 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=28s bloque=0 led=2
+19:22:07.546 << DBG:180.052 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:07.546 << DBG:180.052 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=18s bloque=0 led=2
+19:22:17.547 << DBG:190.053 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:17.547 << DBG:190.053 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=8s bloque=0 led=2
+19:22:26.297 << DBG:198.803 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:22:26.793 << DBG:199.303 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:22:27.553 << DBG:200.054 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:27.553 << DBG:200.054 ETAT lecteur=0 carte=0 grace=0 recherche=1 prochaine_recherche=-1s bloque=0 led=9
+19:22:29.308 << DBG:201.804 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:22:29.309 << DBG:201.805 RECHERCHE : aucun lecteur
+19:22:29.309 << DBG:201.805 RECHERCHE : prochaine tentative dans 30 s
+19:22:37.563 << DBG:210.055 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:37.563 << DBG:210.055 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=21s bloque=0 led=2
+19:22:47.562 << DBG:220.056 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:47.562 << DBG:220.056 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=11s bloque=0 led=2
+19:22:57.560 << DBG:230.057 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:22:57.560 << DBG:230.057 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=1s bloque=0 led=2
+19:22:59.299 << DBG:231.807 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:22:59.798 << DBG:232.307 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:23:02.558 << DBG:235.057 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:23:02.558 << DBG:235.058 RECHERCHE : aucun lecteur
+19:23:02.558 << DBG:235.058 RECHERCHE : prochaine tentative dans 30 s
+19:23:07.553 << DBG:240.058 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:07.553 << DBG:240.058 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=25s bloque=0 led=2
+19:23:17.558 << DBG:250.059 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:17.558 << DBG:250.059 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=14s bloque=0 led=2
+19:23:27.555 << DBG:260.060 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:27.556 << DBG:260.060 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=4s bloque=0 led=2
+19:23:32.542 << DBG:265.060 RECHERCHE : nouvelle tentative (coupure du port + 2500 ms d'enumeration)
+19:23:33.041 << DBG:265.560 PORT : coupure logique du port racine (off=ESP_OK, on=ESP_OK)
+19:23:35.811 << DBG:268.310 USB : 0 peripherique(s) enumere(s) deja present(s)
+19:23:35.811 << DBG:268.311 RECHERCHE : aucun lecteur
+19:23:35.811 << DBG:268.311 RECHERCHE : prochaine tentative dans 30 s
+19:23:37.554 << DBG:270.061 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:37.554 << DBG:270.061 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=28s bloque=0 led=2
+19:23:47.556 << DBG:280.062 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:47.556 << DBG:280.062 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=18s bloque=0 led=2
+19:23:57.566 << DBG:290.063 PORT hprt=0x00001000 alim=1 connecte=0 actif=0 vitesse=- D+=0 D-=0 surintensite=0 ; peripheriques=0
+19:23:57.567 << DBG:290.063 ETAT lecteur=0 carte=0 grace=0 recherche=0 prochaine_recherche=8s bloque=0 led=2
+19:24:05.294 << DBG:297.814 PORT hprt=0x00021401 alim=1 connecte=1 actif=0 vitesse=FS D+=1 D-=0 surintensite=0
+19:24:05.514 << DBG:298.064 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0
+19:24:05.514 << DBG:298.077 ENUM : appareil qui repond 08E6:3437 usb=2.00 classe=00 mps0=8 nbcfg=1 (descripteur lu, configuration en cours)
+19:24:05.536 << DBG:298.083 USB : NEW_DEV adresse 1
+19:24:05.536 << DBG:298.083 ATTACH addr=1 : 08E6:3437 usb=2.00 classe=00/00/00 mps0=8 bcdDevice=2.00 nbcfg=1
+19:24:05.536 << DBG:298.084 ATTACH addr=1 : vitesse=FS config=1 fabricant='Gemalto' produit='USB SmartCard Reader' serie='E66B5793'
+19:24:05.558 << DBG:298.084 CFG [93] 09025D00010100A01909040000030B00000036210101000703000000C0120000C01200000067320000CE990C0035FE0000000000000000000000300201000F010000000000000001070501024000000705820240000007058303080010
+19:24:05.558 << DBG:298.085   INTF 0 alt 0 classe 0B/00/00 eps=3 <- candidat CCID
+19:24:05.580 << DBG:298.085   descripteur de classe CCID (0x21, 54 o)
+19:24:05.580 << DBG:298.085   EP 01 OUT BULK mps=64
+19:24:05.581 << DBG:298.085   EP 82 IN BULK mps=64
+19:24:05.581 << DBG:298.085   EP 83 IN INT mps=8
+19:24:05.602 << DBG:298.086 CCID bcdCCID=1.01 slots=1 tension=0x07 protocoles=0x00000003 horloge=4800/4800 kHz debit=12903/825806 bps IFSD=254
+19:24:05.602 << DBG:298.086 CCID dwFeatures=0x00010230 niveau=TPDU dwMaxCCIDMessageLength=271
+19:24:05.602 << DBG:298.087 LECTEUR PRET : 'USB SmartCard Reader' intf=0 bulk IN 82 (mps 64) / OUT 01 (mps 64), tampon IN 512 o
+19:24:05.602 << READER_OK
+19:24:05.666 << DBG:298.088 SLOT : bmICCStatus 2 (pas de carte)
+19:24:07.589 << DBG:300.091 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:24:07.589 << DBG:300.091 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:24:17.599 << DBG:310.097 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:24:17.599 << DBG:310.097 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:24:27.602 << DBG:320.099 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:24:27.602 << DBG:320.099 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
+19:24:37.597 << DBG:330.109 PORT hprt=0x00021405 alim=1 connecte=1 actif=1 vitesse=FS D+=1 D-=0 surintensite=0 ; peripheriques=1
+19:24:37.598 << DBG:330.109 ETAT lecteur=1 carte=0 grace=0 recherche=0 prochaine_recherche=-1s bloque=0 led=1
